@@ -59,7 +59,7 @@ def convert_dataset(
     num_workers: int = 4,
 ):
     with SuppressWarnings():
-        dataset = LeRobotDataset(repo_id, revision=V20, force_cache_sync=True)
+        dataset = LeRobotDataset(repo_id, revision=V20, force_cache_sync=False)
 
     if (dataset.root / EPISODES_STATS_PATH).is_file():
         (dataset.root / EPISODES_STATS_PATH).unlink()

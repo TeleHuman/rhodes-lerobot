@@ -47,13 +47,14 @@ def main():
     #   - input/output shapes: to properly size the policy
     #   - dataset stats: for normalization and denormalization of input/outputs
     dataset_metadata = LeRobotDatasetMetadata("lerobot/pusht")
+    import ipdb; ipdb.set_trace()
     features = dataset_to_policy_features(dataset_metadata.features)
     output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     input_features = {key: ft for key, ft in features.items() if key not in output_features}
 
     # Policies are initialized with a configuration class, in this case `DiffusionConfig`. For this example,
     # we'll just use the defaults and so no arguments other than input/output features need to be passed.
-    cfg = DiffusionConfig(input_features=input_features, output_features=output_features)
+    cfg = DiffusionConfig(input_features=input_features, output_features=output_features, device='cuda')
 
     # We can now instantiate our policy with this config and the dataset stats.
     policy = DiffusionPolicy(cfg, dataset_stats=dataset_metadata.stats)

@@ -29,8 +29,10 @@ import gymnasium as gym
 import imageio
 import numpy
 import torch
+import os
 
 from lerobot.common.policies.diffusion.modeling_diffusion import DiffusionPolicy
+from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy, PI0FlowMatching
 
 # Create a directory to store the video of the evaluation
 output_directory = Path("outputs/eval/example_pusht_diffusion")
@@ -39,16 +41,33 @@ output_directory.mkdir(parents=True, exist_ok=True)
 # Select your device
 device = "cuda"
 
-# Provide the [hugging face repo id](https://huggingface.co/lerobot/diffusion_pusht):
-pretrained_policy_path = "lerobot/diffusion_pusht"
-# OR a path to a local outputs/train folder.
-# pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
+# 确保使用正确的缓存路径
+## 以下是diffusion policy的loading
+cache_dir = os.getenv("HF_HUB_CACHE", os.path.join(os.getenv("HF_HOME", ""), "hub"))
+# pretrained_policy_path = Path(cache_dir) / "models--lerobot--diffusion_pusht"
 
-policy = DiffusionPolicy.from_pretrained(pretrained_policy_path)
+# # Provide the [hugging face repo id](https://huggingface.co/lerobot/diffusion_pusht):
+# # pretrained_policy_path = "lerobot/diffusion_pusht"
+# # OR a path to a local outputs/train folder.
+# # pretrained_policy_path = Path("outputs/train/example_pusht_diffusion")
+
+# policy = DiffusionPolicy.from_pretrained(
+#     pretrained_policy_path,
+#     local_files_only=True
+# )
+
+## 以下是pi0 policy的loading
+pretrained_policy_path = Path(cache_dir) / "models--lerobot--pi0"
+policy = PI0Policy.from_pretrained(
+    pretrained_policy_path,
+    local_files_only=True
+)
+import ipdb; ipdb.set_trace()
 
 # Initialize evaluation environment to render two observation types:
 # an image of the scene and state/position of the agent. The environment
 # also automatically stops running after 300 interactions/steps.
+# 这里不需要显式输入headless，下面跑完也没影响
 env = gym.make(
     "gym_pusht/PushT-v0",
     obs_type="pixels_agent_pos",
@@ -95,8 +114,8 @@ while not done:
     image = image.to(device, non_blocking=True)
 
     # Add extra (empty) batch dimension, required to forward the policy
-    state = state.unsqueeze(0)
-    image = image.unsqueeze(0)
+    state = state.unsqueeze(0)  # shape: (1, 2)
+    image = image.unsqueeze(0)  # shape: (1, 3, 64, 64)
 
     # Create the policy input dictionary
     observation = {

@@ -41,13 +41,20 @@ pprint(lerobot.available_datasets)
 # You can also browse through the datasets created/ported by the community on the hub using the hub api:
 hub_api = HfApi()
 repo_ids = [info.id for info in hub_api.list_datasets(task_categories="robotics", tags=["LeRobot"])]
+lerobot_repo_ids = []
+for repo_id in repo_ids:
+    if repo_id.startswith('lerobot'):
+        lerobot_repo_ids.append(repo_id)
+
 pprint(repo_ids)
+pprint(lerobot_repo_ids)
 
 # Or simply explore them in your web browser directly at:
 # https://huggingface.co/datasets?other=LeRobot
 
 # Let's take this one for this example
-repo_id = "lerobot/aloha_mobile_cabinet"
+# repo_id = "lerobot/aloha_mobile_cabinet"
+repo_id = "lerobot/pusht"
 # We can have a look and fetch its metadata to know more about it:
 ds_meta = LeRobotDatasetMetadata(repo_id)
 
@@ -105,6 +112,7 @@ frames = [dataset[idx][camera_key] for idx in range(from_idx, to_idx)]
 # The objects returned by the dataset are all torch.Tensors
 print(type(frames[0]))
 print(frames[0].shape)
+print(frames[0].dtype)
 
 # Since we're using pytorch, the shape is in pytorch, channel-first convention (c, h, w).
 # We can compare this shape with the information available for that feature
@@ -113,6 +121,10 @@ pprint(dataset.features[camera_key])
 print(dataset.features[camera_key]["shape"])
 # The shape is in (h, w, c) which is a more universal format.
 
+##################################################################
+#### UPDATED! 噢这个delta_timestamps指定了怎么去采样batch的一个sample
+##################################################################
+### 以下这里说的是利用delta timestamp来读取过去的序列或者未来的序列
 # For many machine learning applications we need to load the history of past observations or trajectories of
 # future actions. Our datasets can load previous and future frames for each key/modality, using timestamps
 # differences with the current loaded frame. For instance:
