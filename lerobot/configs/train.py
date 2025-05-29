@@ -73,7 +73,18 @@ class TrainPipelineConfig(HubMixin):
         if policy_path:
             # Only load the policy config
             cli_overrides = parser.get_cli_overrides("policy")
-            self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
+            
+            # Extract and remove local_files_only from cli_overrides
+            local_files_only = False
+            clean_cli_overrides = []
+            
+            for override in cli_overrides:
+                if override.startswith('--local_files_only='):
+                    local_files_only = override.split('=')[1].lower() == 'true'
+                else:
+                    clean_cli_overrides.append(override)
+
+            self.policy = PreTrainedConfig.from_pretrained(policy_path, local_files_only=local_files_only, cli_overrides=clean_cli_overrides)
             self.policy.pretrained_path = policy_path
         elif self.resume:
             # The entire train config is already loaded, we just need to get the checkpoint dir

@@ -54,9 +54,13 @@ pprint(lerobot_repo_ids)
 
 # Let's take this one for this example
 # repo_id = "lerobot/aloha_mobile_cabinet"
-repo_id = "lerobot/pusht"
+repo_id = "lerobot/aloha_mobile_cabinet"
+# If you have the dataset already downloaded, you can also use the local path to it.
+# For example, if you have it in the following path:
+
+root_path = "/data/zhangyang/huggingface_cache/hub/datasets--lerobot--aloha_mobile_cabinet"
 # We can have a look and fetch its metadata to know more about it:
-ds_meta = LeRobotDatasetMetadata(repo_id)
+ds_meta = LeRobotDatasetMetadata(repo_id, root=root_path)
 
 # By instantiating just this class, you can quickly access useful information about the content and the
 # structure of the dataset without downloading the actual data yet (only metadata files — which are
@@ -77,15 +81,15 @@ print(ds_meta)
 
 # You can then load the actual dataset from the hub.
 # Either load any subset of episodes:
-dataset = LeRobotDataset(repo_id, episodes=[0, 10, 11, 23])
-
+dataset = LeRobotDataset(repo_id, root=root_path, episodes=[0, 10, 11, 23])
 # And see how many frames you have:
 print(f"Selected episodes: {dataset.episodes}")
 print(f"Number of episodes selected: {dataset.num_episodes}")
 print(f"Number of frames selected: {dataset.num_frames}")
 
 # Or simply load the entire dataset:
-dataset = LeRobotDataset(repo_id)
+dataset = LeRobotDataset(repo_id, root=root_path)
+
 print(f"Number of episodes selected: {dataset.num_episodes}")
 print(f"Number of frames selected: {dataset.num_frames}")
 
@@ -139,7 +143,7 @@ delta_timestamps = {
 # Note that in any case, these delta_timestamps values need to be multiples of (1/fps) so that added to any
 # timestamp, you still get a valid timestamp.
 
-dataset = LeRobotDataset(repo_id, delta_timestamps=delta_timestamps)
+dataset = LeRobotDataset(repo_id, root=root_path, delta_timestamps=delta_timestamps)
 print(f"\n{dataset[0][camera_key].shape=}")  # (4, c, h, w)
 print(f"{dataset[0]['observation.state'].shape=}")  # (6, c)
 print(f"{dataset[0]['action'].shape=}\n")  # (64, c)
