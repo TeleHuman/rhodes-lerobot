@@ -410,12 +410,18 @@ def dataset_to_policy_features(features: dict[str, dict]) -> dict[str, PolicyFea
             names = ft["names"]
             # Backward compatibility for "channel" which is an error introduced in LeRobotDataset v2.0 for ported datasets.
             if names[2] in ["channel", "channels"]:  # (h, w, c) -> (c, h, w)
+                ## 这里rgb图像仍是(h, w, c)，因为rgb的names[2] = 'rgb'
+                ## 但是会将depth的shape 从(h, w, c) 转换为(c, h, w)
                 shape = (shape[2], shape[0], shape[1])
         elif key == "observation.environment_state":
             type = FeatureType.ENV
         elif key.startswith("observation"):
             type = FeatureType.STATE
         elif key == "action":
+            type = FeatureType.ACTION
+            
+        # compatibility with RoboMind-like dataset
+        elif key.startswith("actions"):
             type = FeatureType.ACTION
         else:
             continue

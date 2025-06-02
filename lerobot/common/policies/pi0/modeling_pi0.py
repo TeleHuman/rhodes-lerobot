@@ -50,6 +50,7 @@ policy = Pi0Policy.from_pretrained("lerobot/pi0")
 """
 
 import math
+import logging
 from collections import deque
 
 import torch
@@ -240,6 +241,28 @@ class PI0Policy(PreTrainedPolicy):
         super().__init__(config)
         config.validate_features()
         self.config = config
+
+        state_keys = []
+        action_keys = []
+        for key, ft in config.input_features.items():
+            # Currently, all states are concatenated by default
+            if ft.type == "STATE" and not key.endswith('.state'):
+                state_keys.append(key)
+
+        for key, ft in config.output_features.items():
+            if ft.type == "ACTION" and not key.endswith('action'):
+                action_keys.append(key)
+
+        if len(state_keys) > 0:
+            self.state_keys = state_keys
+            self.config.concat_state = True
+            logging.info(f"Enabling state concatenate automatically: {state_keys=}")
+
+        if len(action_keys) > 0:
+            self.action_keys = action_keys
+            self.config.concat_action = True
+            logging.info(f"Enabling action concatenate automatically: {action_keys=}")
+
         self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
         self.normalize_targets = Normalize(
             config.output_features, config.normalization_mapping, dataset_stats
@@ -352,6 +375,10 @@ class PI0Policy(PreTrainedPolicy):
 
         # Preprocess image features present in the batch
         for key in present_img_keys:
+            # commented out by Yang Zhang
+            if 'depth' in key:
+                continue    # 暂时不对depth的图像进行处理
+
             img = batch[key]
 
             if self.config.resize_imgs_with_padding is not None:
@@ -427,11 +454,22 @@ class PI0Policy(PreTrainedPolicy):
 
     def prepare_state(self, batch):
         """Pad state"""
+        if self.config.concat_state:
+            # Concatenate all state keys into a single state vector
+            batch[OBS_ROBOT] = torch.cat([batch[key] for key in self.state_keys], dim=-1)
+        # Pad state to max_state_dim
+        # This is needed to ensure that the state vector has the same shape as the model expects.
         state = pad_vector(batch[OBS_ROBOT], self.config.max_state_dim)
         return state
 
     def prepare_action(self, batch):
         """Pad action"""
+        if self.config.concat_action:
+            # Concatenate all action keys into a single action vector
+            batch[ACTION] = torch.cat([batch[key] for key in self.action_keys], dim=-1)
+            batch['action_is_pad'] = batch.get(self.action_keys[0] + '_is_pad', None)
+        # Pad action to max_action_dim
+        # This is needed to ensure that the action vector has the same shape as the model expects.
         actions = pad_vector(batch[ACTION], self.config.max_action_dim)
         return actions
 

@@ -45,6 +45,14 @@ class PI0Config(PreTrainedConfig):
     # Image preprocessing
     resize_imgs_with_padding: tuple[int, int] = (224, 224)
 
+    ## 以下两个是为了处理类似RoboMind里面出现的多个states下和actions下的属性
+    ## 默认对所有的子属性全部拼接
+    # State preprocessing
+    concat_state: bool = False
+
+    # Action preprocessing
+    concat_action: bool = False
+
     # Add empty images. Used by pi0_aloha_sim which adds the empty
     # left and right wrist cameras in addition to the top camera.
     empty_cameras: int = 0

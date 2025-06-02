@@ -175,6 +175,8 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         super().__init__(config=config)
         self.config = config
         self.paligemma = PaliGemmaForConditionalGeneration(config=config.paligemma_config)
+
+        ## TODO:以下两行需要认真学习下代码 by Yang Zhang
         self.gemma_expert = GemmaForCausalLM(config=config.gemma_expert_config)
         # Remove unused embed_tokens
         self.gemma_expert.model.embed_tokens = None
@@ -216,10 +218,10 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                 param.data = param.data.to(dtype=torch.bfloat16)
 
     def embed_image(self, image: torch.Tensor):
-        return self.paligemma.get_image_features(image)
-
+        return self.paligemma.model.get_image_features(image)
+    
     def embed_language_tokens(self, tokens: torch.Tensor):
-        return self.paligemma.language_model.model.embed_tokens(tokens)
+        return self.paligemma.model.get_input_embeddings()(tokens)
 
     # TODO: break down this huge forward into modules or functions
     def forward(
@@ -231,7 +233,8 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         use_cache: Optional[bool] = None,
         fill_kv_cache: Optional[bool] = None,
     ):
-        models = [self.paligemma.language_model.model, self.gemma_expert.model]
+        # models = [self.paligemma.language_model.model, self.gemma_expert.model]
+        models = [self.paligemma.language_model, self.gemma_expert.model]
 
         for hidden_states in inputs_embeds:
             # TODO this is very inefficient

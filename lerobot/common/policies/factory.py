@@ -135,8 +135,15 @@ def make_policy(
                 "by default without stats from a dataset."
             )
         features = env_to_policy_features(env_cfg)
-
+    
     cfg.output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
+    if len(cfg.output_features.keys()) == 0:
+        raise ValueError(
+            "No output features found in the provided dataset metadata or environment config. "
+            "Please ensure that the dataset or environment has action features defined."
+        )
+    
+    # 除了feature.type = FeatureType.ACTION的feature 都默认作为input
     cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
     kwargs["config"] = cfg
 
