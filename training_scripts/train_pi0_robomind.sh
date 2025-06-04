@@ -10,7 +10,6 @@ DATASET_ROOT="/gemini/space/shared_dataset/RoboMind_2_lerobot/benchmark1_0_relea
 
 # Pretrained model configuration  
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
-MAX_TOKEN_LENGTH=64
 
 
 # Output directory
@@ -21,11 +20,10 @@ BATCH_SIZE=2
 
 
 
-python lerobot/scripts/train.py \
+CUDA_VISIBLE_DEVICES=1 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=True \
-    --policy.tokenizer_max_length=$MAX_TOKEN_LENGTH \
     --output_dir=$OUTPUT_DIR \
     --batch_size=$BATCH_SIZE
