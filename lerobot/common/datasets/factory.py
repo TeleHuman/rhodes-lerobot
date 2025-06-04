@@ -102,7 +102,8 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             video_backend=cfg.dataset.video_backend,
         )
     else:
-        raise NotImplementedError("The MultiLeRobotDataset isn't supported for now.")
+        # raise NotImplementedError("The MultiLeRobotDataset isn't supported for now.")
+        ### go!go!go!出发咯
         dataset = MultiLeRobotDataset(
             cfg.dataset.repo_id,
             # TODO(aliberts): add proper support for multi dataset
