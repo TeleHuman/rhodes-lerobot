@@ -123,6 +123,10 @@ def train(cfg: TrainPipelineConfig):
     device = get_safe_torch_device(cfg.policy.device, log=True)
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
+    
+    ### exceptional for Pi0 ###
+    if 'bridge' in cfg.dataset.repo_id and 'pi0' == cfg.policy.type:
+        cfg.policy.tokenizer_max_length = 64
 
     logging.info("Creating dataset")
     dataset = make_dataset(cfg)

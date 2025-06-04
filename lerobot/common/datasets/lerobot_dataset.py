@@ -498,6 +498,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             assert all((self.root / fpath).is_file() for fpath in self.get_episodes_file_paths())
             self.hf_dataset = self.load_hf_dataset()
         except (AssertionError, FileNotFoundError, NotADirectoryError):
+            logging.info('Connected to online hub website to fetch necessary files...')
             self.revision = get_safe_version(self.repo_id, self.revision)
             self.download_episodes(download_videos)
             self.hf_dataset = self.load_hf_dataset()
@@ -1038,6 +1039,20 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     The underlying `LeRobotDataset`s are effectively concatenated, and this class adopts much of the API
     structure of `LeRobotDataset`.
     """
+    ### UPDATE at 0604 ###
+    ### 既然已经load了多来源数据，默认就只做pretraining
+    ### 所以disable delta_timestamps的使用
+
+    # TODO: 1. 确定当前代码 normalize 做的到底是episode-wise还是global normalization 大概率是后者
+    # 2. stats管理每个数据来源的mean和std，不要做聚合
+    # 3. 取消delta 时间戳使用，直接取序列
+    # 4. 可能需要提前处理完每个数据来源的数据集中的features.keys
+    # 5. 接着第4点，我们需要对一些更加下层的sub-attributes进行自动拼接，包括对于stats也拼接起来
+    # 6. 对于images的特征要去最多的视角，不能取交集在batch里
+    # 默认：imag_0 = camera_top（第一人称从上往下看，不是严格垂直）
+    # image_1 = camera_left
+    # image_2 = camera_right
+    # image_3 = camera_on_wrist
 
     def __init__(
         self,
