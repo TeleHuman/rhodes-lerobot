@@ -31,4 +31,5 @@ python lerobot/scripts/train.py \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=True \
     --output_dir=$OUTPUT_DIR \
-    --batch_size=$BATCH_SIZE
+    --batch_size=$BATCH_SIZE \
+    --num_workers=0

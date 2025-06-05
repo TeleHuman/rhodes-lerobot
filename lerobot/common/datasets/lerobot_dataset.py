@@ -25,6 +25,7 @@ import packaging.version
 import PIL.Image
 import torch
 import torch.utils
+import torch.nn.functional as F
 from datasets import concatenate_datasets, load_dataset
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.constants import REPOCARD_NAME
@@ -74,7 +75,7 @@ from lerobot.common.datasets.video_utils import (
     get_video_info,
 )
 from lerobot.common.robot_devices.robots.utils import Robot
-from lerobot.configs.types import NormalizationMode
+from lerobot.configs.types import NormalizationMode, FeatureType
 from lerobot.common.policies.normalize import Normalize, Unnormalize, MultiDatasetNormalize, MultiDatasetUnnormalize
 
 CODEBASE_VERSION = "v2.1"
@@ -1040,6 +1041,42 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return obj
 
 
+def resize_with_pad(img, img_resize_shape, pad_value=-1):
+    # assume no-op when width height fits already
+    if img.ndim != 4:
+        raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+
+    width, height = img_resize_shape
+    cur_height, cur_width = img.shape[2:]
+
+    ratio = max(cur_width / width, cur_height / height)
+    resized_height = int(cur_height / ratio)
+    resized_width = int(cur_width / ratio)
+    resized_img = F.interpolate(
+        img, size=(resized_height, resized_width), mode="bilinear", align_corners=False
+    )
+
+    pad_height = max(0, int(height - resized_height))
+    pad_width = max(0, int(width - resized_width))
+
+    # pad on left and top of image
+    padded_img = F.pad(resized_img, (pad_width, 0, pad_height, 0), value=pad_value)
+    return padded_img
+
+def pad_vector(vector, new_dim):
+    """Can be (batch_size x sequence_length x features_dimension)
+    or (batch_size x features_dimension)
+    """
+    if vector.shape[-1] == new_dim:
+        return vector
+    shape = list(vector.shape)
+    current_dim = shape[-1]
+    shape[-1] = new_dim
+    new_vector = torch.zeros(*shape, dtype=vector.dtype, device=vector.device)
+    new_vector[..., :current_dim] = vector
+    return new_vector
+
+
 class MultiLeRobotDataset(torch.utils.data.Dataset):
     """A dataset consisting of multiple underlying `LeRobotDataset`s.
 
@@ -1180,8 +1217,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         ### 因为这个intersection会决定cfg.output_features和cfg.input_features
         self.intersection_features = max_features
 
-        import ipdb; ipdb.set_trace()
-
         # prepare for the normalization preprocessing
         ### NOTE: this part is dependent on the requirement of the current policy type
         self.stats = {self.repo_id_to_index[dataset.repo_id]: dataset.meta.stats for dataset in self._datasets}
@@ -1281,6 +1316,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         """
         # 1e-4 to account for possible numerical error
         return 1 / self.fps - 1e-4
+    
 
     def __len__(self):
         return self.num_frames
@@ -1300,10 +1336,22 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
             break
         else:
             raise AssertionError("We expect the loop to break out as long as the index is within bounds.")
-        import ipdb; ipdb.set_trace()
         item = self._datasets[dataset_idx][idx - start_idx]
         item["dataset_index"] = torch.tensor(dataset_idx)
         item = self.normalize(item)
+
+        # import ipdb; ipdb.set_trace()
+
+        for k, v in self.features_to_be_normalized:
+            if v.type == FeatureType.VISUAL:
+                item[k] = resize_with_pad(item[k], self.img_resize_shape, pad_value=0)
+            
+            elif v.type == FeatureType.STATE or v.type == FeatureType.ACTION:
+                item[k] = pad_vector(item[k])
+
+            else:
+                continue
+
         for data_key in self.disabled_features:
             if data_key in item:
                 del item[data_key]
