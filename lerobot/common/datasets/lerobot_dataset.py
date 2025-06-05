@@ -1180,8 +1180,6 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         ### 因为这个intersection会决定cfg.output_features和cfg.input_features
         self.intersection_features = max_features
 
-        import ipdb; ipdb.set_trace()
-
         # prepare for the normalization preprocessing
         ### NOTE: this part is dependent on the requirement of the current policy type
         self.stats = {dataset.repo_id: dataset.meta.stats for dataset in self._datasets}
