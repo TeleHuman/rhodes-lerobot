@@ -130,9 +130,9 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             cfg.dataset.repo_id,
             root=cfg.dataset.root,
             delta_timestamps_ds_dict=delta_timestamps_ds_dict,
-
             image_transforms=image_transforms,
             video_backend=cfg.dataset.video_backend,
+            policy_normalization_mapping=cfg.policy.normalization_mapping,
         )
         logging.info(
             "Multiple datasets were provided. Applied the following index mapping to the provided datasets: "

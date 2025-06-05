@@ -45,6 +45,7 @@ from lerobot.common.datasets.utils import (
     check_version_compatibility,
     create_empty_dataset_info,
     create_lerobot_dataset_card,
+    dataset_to_policy_features,
     embed_images,
     get_delta_indices,
     get_episode_data_index,
@@ -73,6 +74,8 @@ from lerobot.common.datasets.video_utils import (
     get_video_info,
 )
 from lerobot.common.robot_devices.robots.utils import Robot
+from lerobot.configs.types import NormalizationMode
+from lerobot.common.policies.normalize import Normalize, Unnormalize, MultiDatasetNormalize, MultiDatasetUnnormalize
 
 CODEBASE_VERSION = "v2.1"
 
@@ -1071,12 +1074,15 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         tolerances_s: dict | None = None,
         download_videos: bool = True,
         video_backend: str | None = None,
+        policy_normalization_mapping: dict | None = None,
     ):
         super().__init__()
         self.repo_ids = repo_ids
         self.root = Path(root) if root else HF_LEROBOT_HOME
         self.tolerances_s = tolerances_s if tolerances_s else dict.fromkeys(repo_ids, 0.0001)
         self.delta_timestamps_ds_dict = delta_timestamps_ds_dict
+        self.policy_normalization_mapping = policy_normalization_mapping
+        
         # Construct the underlying datasets passing everything but `transform` and `delta_timestamps` which
         # are handled by this class.
         self._datasets = [
@@ -1127,13 +1133,21 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         for key in intersection_features:
             self.intersection_features[key] = self._datasets[0].features[key]
 
+        ### prepare for the normalization preprocessing
+        ### NOTE: this part is dependent on the requirement of the current policy type
+        self.stats = {dataset.repo_id: dataset.meta.stats for dataset in self._datasets}
+
+        self.features_to_be_normalized = dataset_to_policy_features(self.intersection_features)
+        self.normalize = MultiDatasetNormalize(self.features_to_be_normalized, self.policy_normalization_mapping, self.stats)
+        
+        import ipdb; ipdb.set_trace()
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
         
         # We should never perform aggregation for datasets
         # with multiple robots of different ranges. Instead we should have one normalization
         # per robot.
-        self.stats = [dataset.meta.stats for dataset in self._datasets]
+        # self.stats = {}dataset.meta.stats for dataset in self._datasets]
 
     @property
     def repo_id_to_index(self):
