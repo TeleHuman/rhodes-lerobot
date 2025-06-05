@@ -90,6 +90,7 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
 def make_policy(
     cfg: PreTrainedConfig,
     ds_meta: LeRobotDatasetMetadata | None = None,
+    features: set[str] | None = None,
     env_cfg: EnvConfig | None = None,
 ) -> PreTrainedPolicy:
     """Make an instance of a policy class.
@@ -131,7 +132,13 @@ def make_policy(
     policy_cls = get_policy_class(cfg.type)
 
     kwargs = {}
-    if ds_meta is not None:
+    if isinstance(ds_meta, dict):
+        ### TODO: 后面需要改成并集，目前用交集测试
+        assert features is not None, "Intersection features must be provided for multi-dataset training"
+        features = dataset_to_policy_features(features)
+        kwargs["dataset_stats"] = {k: v.stats for k, v in ds_meta.items()}
+
+    elif ds_meta is not None:
         features = dataset_to_policy_features(ds_meta.features)
         kwargs["dataset_stats"] = ds_meta.stats
     else:

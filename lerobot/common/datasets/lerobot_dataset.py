@@ -1048,8 +1048,8 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     ### 所以disable delta_timestamps的使用
 
     # TODO: 1. 确定当前代码 normalize 做的到底是episode-wise还是global normalization 大概率是后者
-    #####   Done: 应该是后者，参考L489，对2.1会做聚合
-    # 2. stats管理每个数据来源的mean和std，不要做聚合
+    #####   Done: 应该是后者，参考L489，对于2. episode stats会做聚合
+    # 2. stats管理每个数据来源的mean和std，不要做聚合 ×
     # 3. 取消delta 时间戳使用，直接取序列
     # 4. 可能需要提前处理完每个数据来源的数据集中的features.keys
     # 5. 接着第4点，我们需要对一些更加下层的sub-attributes进行自动拼接，包括对于stats也拼接起来
@@ -1065,7 +1065,9 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         root: str | Path | None = None,
         episodes: dict | None = None,
         image_transforms: Callable | None = None,
+        # NOTE: currently delta_timestamps is deprecated, this variable is theoretically set for all datasets
         delta_timestamps: dict[list[float]] | None = None,
+        delta_timestamps_ds_dict: dict[str, dict[list[float]]] | None = None,
         tolerances_s: dict | None = None,
         download_videos: bool = True,
         video_backend: str | None = None,
@@ -1074,6 +1076,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         self.repo_ids = repo_ids
         self.root = Path(root) if root else HF_LEROBOT_HOME
         self.tolerances_s = tolerances_s if tolerances_s else dict.fromkeys(repo_ids, 0.0001)
+        self.delta_timestamps_ds_dict = delta_timestamps_ds_dict
         # Construct the underlying datasets passing everything but `transform` and `delta_timestamps` which
         # are handled by this class.
         self._datasets = [
@@ -1081,8 +1084,8 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
                 repo_id,
                 root=self.root / repo_id,
                 episodes=episodes[repo_id] if episodes else None,
-                image_transforms=image_transforms,
-                delta_timestamps=delta_timestamps,
+                image_transforms=image_transforms,  # TODO: here we can consider a dict for specifying different image transforms for different datasets
+                delta_timestamps=delta_timestamps_ds_dict[repo_id],
                 tolerance_s=self.tolerances_s[repo_id],
                 download_videos=download_videos,
                 video_backend=video_backend,
@@ -1093,6 +1096,12 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         # Disable any data keys that are not common across all of the datasets. Note: we may relax this
         # restriction in future iterations of this class. For now, this is necessary at least for being able
         # to use PyTorch's default DataLoader collate function.
+        
+        # 这里首先默认所有载入进来的数据集，都已经按照规范化的key命名
+        # 比如: observation.images.image_0, observation.images.image_1, observation.state, action
+
+        ### TODO: 取features的并集
+        ### NOTE: 目前先试用交集测试
         self.disabled_features = set()
         intersection_features = set(self._datasets[0].features)
         for ds in self._datasets:
@@ -1104,18 +1113,27 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
             )
         for repo_id, ds in zip(self.repo_ids, self._datasets, strict=True):
             extra_keys = set(ds.features).difference(intersection_features)
-            logging.warning(
-                f"keys {extra_keys} of {repo_id} were disabled as they are not contained in all the "
-                "other datasets."
-            )
+            if len(extra_keys) > 0:
+                logging.warning(
+                    f"keys {extra_keys} of {repo_id} were disabled as they are not contained in all the "
+                    "other datasets."
+                )
             self.disabled_features.update(extra_keys)
+
+        ### 注意这里的intersection features是根据第一个数据集的features取的，
+        ### 如果有些数据集的image shape不一致，怎么想办法传到intersection features是个问题，
+        ### 因为这个intersection会决定cfg.output_features和cfg.input_features
+        self.intersection_features = {}
+        for key in intersection_features:
+            self.intersection_features[key] = self._datasets[0].features[key]
 
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
-        # TODO(rcadene, aliberts): We should not perform this aggregation for datasets
+        
+        # We should never perform aggregation for datasets
         # with multiple robots of different ranges. Instead we should have one normalization
         # per robot.
-        self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
+        self.stats = [dataset.meta.stats for dataset in self._datasets]
 
     @property
     def repo_id_to_index(self):
@@ -1129,6 +1147,10 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     def repo_index_to_id(self):
         """Return the inverse mapping if repo_id_to_index."""
         return {v: k for k, v in self.repo_id_to_index}
+    
+    @property
+    def meta(self):
+        return {ds.repo_id: ds.meta for ds in self._datasets}
 
     @property
     def fps(self) -> int:
@@ -1136,7 +1158,8 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
         NOTE: Fow now, this relies on a check in __init__ to make sure all sub-datasets have the same info.
         """
-        return self._datasets[0].meta.info["fps"]
+        # return self._datasets[0].meta.info["fps"]
+        return self._datasets[0].fps
 
     @property
     def video(self) -> bool:
@@ -1200,6 +1223,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.num_frames
 
+    ### TODO: to be modified
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         if idx >= len(self):
             raise IndexError(f"Index {idx} out of bounds.")

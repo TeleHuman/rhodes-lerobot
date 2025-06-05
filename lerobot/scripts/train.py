@@ -156,7 +156,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
         cfg.policy.tokenizer_max_length = 64
 
     logging.info("Creating dataset")
-    dataset, sample_weights = make_dataset(cfg)
+    dataset = make_dataset(cfg)
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
@@ -170,6 +170,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     policy = make_policy(
         cfg=cfg.policy,
         ds_meta=dataset.meta,
+        features=getattr(dataset, "intersection_features", None),
     )
     policy.to(device)
 
@@ -211,12 +212,12 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
         shuffle = True
         sampler = None
 
-    if len(sample_weights) > 0:
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(dataset),
-            replacement=True,
-        )
+    # if len(sample_weights) > 0:
+    #     sampler = WeightedRandomSampler(
+    #         weights=sample_weights,
+    #         num_samples=len(dataset),
+    #         replacement=True,
+    #     )
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
