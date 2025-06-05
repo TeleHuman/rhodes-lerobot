@@ -98,7 +98,7 @@ class TrainPipelineConfig(HubMixin):
                     f"{config_path=} is expected to be a local path. "
                     "Resuming from the hub is not supported for now."
                 )
-            policy_path = Path(config_path).parent
+            policy_path = Path(config_path)
             self.policy.pretrained_path = policy_path
             self.checkpoint_path = policy_path.parent
 
@@ -118,8 +118,8 @@ class TrainPipelineConfig(HubMixin):
             train_dir = f"{now:%Y-%m-%d}/{now:%H-%M-%S}_{self.job_name}"
             self.output_dir = Path("outputs/train") / train_dir
 
-        if isinstance(self.dataset.repo_id, list):
-            raise NotImplementedError("LeRobotMultiDataset is not currently implemented.")
+        # if isinstance(self.dataset.repo_id, list):
+        #     raise NotImplementedError("LeRobotMultiDataset is not currently implemented.")
 
         if not self.use_policy_training_preset and (self.optimizer is None or self.scheduler is None):
             raise ValueError("Optimizer and Scheduler must be set when the policy presets are not used.")

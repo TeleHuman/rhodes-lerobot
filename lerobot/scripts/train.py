@@ -156,7 +156,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
         cfg.policy.tokenizer_max_length = 64
 
     logging.info("Creating dataset")
-    dataset = make_dataset(cfg)
+    dataset, sample_weights = make_dataset(cfg)
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
@@ -203,9 +203,20 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
             drop_n_last_frames=cfg.policy.drop_n_last_frames,
             shuffle=True,
         )
+        
+        ### TODO: 如果是多任务数据集载入，这里不支持这种episode aware sampler
+        if cfg.dataset.repo_id.startswith("["):
+            raise ValueError("EpisodeAwareSampler is not supported for multi-task datasets")
     else:
         shuffle = True
         sampler = None
+
+    if len(sample_weights) > 0:
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(dataset),
+            replacement=True,
+        )
 
     dataloader = torch.utils.data.DataLoader(
         dataset,

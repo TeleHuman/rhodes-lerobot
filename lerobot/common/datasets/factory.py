@@ -15,8 +15,11 @@
 # limitations under the License.
 import logging
 from pprint import pformat
+from pathlib import Path
 
 import torch
+from torch.utils.data import ConcatDataset
+from torch.utils.data import WeightedRandomSampler
 
 from lerobot.common.datasets.lerobot_dataset import (
     LeRobotDataset,
@@ -86,7 +89,11 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
     image_transforms = (
         ImageTransforms(cfg.dataset.image_transforms) if cfg.dataset.image_transforms.enable else None
     )
+    
+    if cfg.dataset.repo_id.startswith("["):
+        cfg.dataset.repo_id = eval(cfg.dataset.repo_id)
 
+    sample_weights = []
     if isinstance(cfg.dataset.repo_id, str):
         ds_meta = LeRobotDatasetMetadata(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
@@ -101,9 +108,37 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             revision=cfg.dataset.revision,
             video_backend=cfg.dataset.video_backend,
         )
-    else:
-        # raise NotImplementedError("The MultiLeRobotDataset isn't supported for now.")
+    elif isinstance(cfg.dataset.repo_id, list):
+        datasets = []
+        for repo_id in cfg.dataset.repo_id:
+            ds_meta = LeRobotDatasetMetadata(
+                repo_id, root=Path(cfg.dataset.root) / repo_id, revision=cfg.dataset.revision
+            )
+            delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
+            dataset = LeRobotDataset(
+                repo_id,
+                root=Path(cfg.dataset.root) / repo_id,
+                episodes=cfg.dataset.episodes,
+                delta_timestamps=delta_timestamps,
+                image_transforms=image_transforms,
+                revision=cfg.dataset.revision,
+                video_backend=cfg.dataset.video_backend,
+            )
+            datasets.append(dataset)
+            sample_weights.extend(
+                [1.0 / len(dataset)] * len(dataset)
+            )
+
+        # import ipdb; ipdb.set_trace()
+        ### HACK: to be considered more
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=32,
+            replacement=True,
+        )
+        
         ### go!go!go!出发咯
+        #### 以这个为主，concatdataset放弃
         dataset = MultiLeRobotDataset(
             cfg.dataset.repo_id,
             # TODO(aliberts): add proper support for multi dataset
@@ -116,9 +151,12 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             f"{pformat(dataset.repo_id_to_index, indent=2)}"
         )
 
+    else:
+        raise ValueError(f"Invalid dataset repo_id: {cfg.dataset.repo_id}")
+
     if cfg.dataset.use_imagenet_stats:
         for key in dataset.meta.camera_keys:
             for stats_type, stats in IMAGENET_STATS.items():
                 dataset.meta.stats[key][stats_type] = torch.tensor(stats, dtype=torch.float32)
 
-    return dataset
+    return dataset, sample_weights

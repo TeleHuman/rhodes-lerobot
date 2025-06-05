@@ -296,6 +296,7 @@ class LeRobotDatasetMetadata:
             f"    Total episodes: '{self.total_episodes}',\n"
             f"    Total frames: '{self.total_frames}',\n"
             f"    Features: '{feature_keys}',\n"
+            f"    Fps: '{self.fps}',\n"
             "})',\n"
         )
 
