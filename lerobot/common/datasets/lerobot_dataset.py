@@ -749,6 +749,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         task_idx = item["task_index"].item()
         item["task"] = self.meta.tasks[task_idx]
 
+        # Add repo_id as a string
+        item["dataset"] = self.repo_id
+
         return item
 
     def __repr__(self):
@@ -1044,6 +1047,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     ### 所以disable delta_timestamps的使用
 
     # TODO: 1. 确定当前代码 normalize 做的到底是episode-wise还是global normalization 大概率是后者
+    #####   Done: 应该是后者，参考L489，对2.1会做聚合
     # 2. stats管理每个数据来源的mean和std，不要做聚合
     # 3. 取消delta 时间戳使用，直接取序列
     # 4. 可能需要提前处理完每个数据来源的数据集中的features.keys
