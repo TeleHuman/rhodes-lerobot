@@ -136,7 +136,7 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             img_resize_shape=cfg.policy.resize_imgs_with_padding,
         )
         logging.info(
-            "Multiple datasets were provided. Applied the following index mapping to the provided datasets: "
+            "Multiple datasets were provided. Applied the following index mapping to the provided datasets: \n"
             f"{pformat(dataset.repo_id_to_index, indent=2)}"
         )
 

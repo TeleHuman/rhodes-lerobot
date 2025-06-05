@@ -1043,18 +1043,18 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
 def resize_with_pad(img, img_resize_shape, pad_value=-1):
     # assume no-op when width height fits already
-    if img.ndim != 4:
-        raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+    if img.shape[-2:] == img_resize_shape:
+        return img
 
     width, height = img_resize_shape
-    cur_height, cur_width = img.shape[2:]
+    cur_height, cur_width = img.shape[-2:]
 
     ratio = max(cur_width / width, cur_height / height)
     resized_height = int(cur_height / ratio)
     resized_width = int(cur_width / ratio)
     resized_img = F.interpolate(
-        img, size=(resized_height, resized_width), mode="bilinear", align_corners=False
-    )
+        img.unsqueeze(0), size=(resized_height, resized_width), mode="bilinear", align_corners=False
+    ).squeeze(0)
 
     pad_height = max(0, int(height - resized_height))
     pad_width = max(0, int(width - resized_width))
@@ -1339,15 +1339,14 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         item = self._datasets[dataset_idx][idx - start_idx]
         item["dataset_index"] = torch.tensor(dataset_idx)
         item = self.normalize(item)
+        item["is_normalized"] = True
 
-        # import ipdb; ipdb.set_trace()
-
-        for k, v in self.features_to_be_normalized:
+        for k, v in self.features_to_be_normalized.items():
             if v.type == FeatureType.VISUAL:
                 item[k] = resize_with_pad(item[k], self.img_resize_shape, pad_value=0)
             
             elif v.type == FeatureType.STATE or v.type == FeatureType.ACTION:
-                item[k] = pad_vector(item[k])
+                item[k] = pad_vector(item[k], v.shape[0])
 
             else:
                 continue

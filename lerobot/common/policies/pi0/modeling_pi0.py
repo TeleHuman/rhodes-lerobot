@@ -339,8 +339,9 @@ class PI0Policy(PreTrainedPolicy):
             batch[OBS_ROBOT] = self._pi_aloha_decode_state(batch[OBS_ROBOT])
             batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
-        batch = self.normalize_inputs(batch)
-        batch = self.normalize_targets(batch)
+        if "is_normalized" not in batch:
+            batch = self.normalize_inputs(batch)
+            batch = self.normalize_targets(batch)
 
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)
