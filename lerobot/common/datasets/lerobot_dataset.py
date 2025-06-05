@@ -1075,6 +1075,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         download_videos: bool = True,
         video_backend: str | None = None,
         policy_normalization_mapping: dict | None = None,
+        img_resize_shape: tuple[int, int] | None = None,    # (width, height)
     ):
         super().__init__()
         self.repo_ids = repo_ids
@@ -1082,7 +1083,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         self.tolerances_s = tolerances_s if tolerances_s else dict.fromkeys(repo_ids, 0.0001)
         self.delta_timestamps_ds_dict = delta_timestamps_ds_dict
         self.policy_normalization_mapping = policy_normalization_mapping
-        
+        self.img_resize_shape = img_resize_shape
         # Construct the underlying datasets passing everything but `transform` and `delta_timestamps` which
         # are handled by this class.
         self._datasets = [
@@ -1090,7 +1091,8 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
                 repo_id,
                 root=self.root / repo_id,
                 episodes=episodes[repo_id] if episodes else None,
-                image_transforms=image_transforms,  # TODO: here we can consider a dict for specifying different image transforms for different datasets
+                # TODO: here we can consider a dict for specifying different image transforms for different datasets
+                image_transforms=image_transforms,
                 delta_timestamps=delta_timestamps_ds_dict[repo_id],
                 tolerance_s=self.tolerances_s[repo_id],
                 download_videos=download_videos,
@@ -1108,15 +1110,62 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
         ### TODO: 取features的并集
         ### NOTE: 目前先试用交集测试
+        ### TODO: 在这里需要取出intersection_features里面每个key在所有数据集里面的最大的维度
         self.disabled_features = set()
+        
+        # 同时计算交集features和每个key的最大维度
         intersection_features = set(self._datasets[0].features)
-        for ds in self._datasets:
+        max_features = {}
+        
+        # 初始化：从第一个数据集开始
+        for key in self._datasets[0].features:
+            max_features[key] = self._datasets[0].features[key].copy()
+        
+        # 遍历其余数据集，同时更新交集和最大维度
+        for ds in self._datasets[1:]:
+            # 更新交集
             intersection_features.intersection_update(ds.features)
+            
+            # 对于当前数据集中的每个feature，更新最大shape
+            for key in intersection_features:
+                if key in max_features:
+                    current_feature = ds.features[key]
+                    max_feature = max_features[key]
+                    
+                    # 如果有shape信息，比较并更新最大的shape
+                    if 'shape' in current_feature and 'shape' in max_feature:
+                        current_shape = current_feature['shape']
+                        max_shape = max_feature['shape']
+                        
+                        # 对于每个维度，取最大值
+                        if len(current_shape) == len(max_shape):
+                            new_shape = tuple(max(c, m) for c, m in zip(current_shape, max_shape))
+                            max_feature['shape'] = new_shape
+                        else:
+                            # 如果shape长度不同，保留较长的那个
+                            if len(current_shape) > len(max_shape):
+                                raise ValueError(f"Shape length mismatch for feature {key} in dataset {ds.repo_id}")
+                                # max_feature['shape'] = current_shape
+                    
+                    # 更新其他可能需要合并的属性
+                    # 如果有names信息，保持一致性检查
+                    if 'names' in current_feature and 'names' in max_feature:
+                        # 简单起见，保留第一个数据集的names，但可以在这里添加更复杂的合并逻辑
+                        # NOTE: 由于已经默认去最大维度了，这里的names已经不适用了，所以请不要参考取了最大维度后的names
+                        # 每个数据集里面每个维度的意义可能都不一样
+                        pass
+                
+                else:
+                    max_features.pop(key, None)
+        
+        
         if len(intersection_features) == 0:
             raise RuntimeError(
                 "Multiple datasets were provided but they had no keys common to all of them. "
                 "The multi-dataset functionality currently only keeps common keys."
             )
+            
+        # 记录disabled features
         for repo_id, ds in zip(self.repo_ids, self._datasets, strict=True):
             extra_keys = set(ds.features).difference(intersection_features)
             if len(extra_keys) > 0:
@@ -1126,21 +1175,20 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
                 )
             self.disabled_features.update(extra_keys)
 
-        ### 注意这里的intersection features是根据第一个数据集的features取的，
-        ### 如果有些数据集的image shape不一致，怎么想办法传到intersection features是个问题，
+        ### 注意这里的intersection features现在使用最大维度的features
+        ### 如果有些数据集的image shape不一致，现在会使用最大的shape
         ### 因为这个intersection会决定cfg.output_features和cfg.input_features
-        self.intersection_features = {}
-        for key in intersection_features:
-            self.intersection_features[key] = self._datasets[0].features[key]
+        self.intersection_features = max_features
 
-        ### prepare for the normalization preprocessing
+        import ipdb; ipdb.set_trace()
+
+        # prepare for the normalization preprocessing
         ### NOTE: this part is dependent on the requirement of the current policy type
         self.stats = {dataset.repo_id: dataset.meta.stats for dataset in self._datasets}
 
         self.features_to_be_normalized = dataset_to_policy_features(self.intersection_features)
         self.normalize = MultiDatasetNormalize(self.features_to_be_normalized, self.policy_normalization_mapping, self.stats)
         
-        import ipdb; ipdb.set_trace()
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
         
