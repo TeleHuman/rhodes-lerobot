@@ -314,22 +314,17 @@ class MultiDatasetNormalize(nn.Module):
         self.norm_map = norm_map
         self.stats = stats
         stats_buffers = create_multi_stats_buffers(features, norm_map, stats)
-        for dataset, ds_buffers in stats_buffers.items():
+        for dataset_idx, ds_buffers in stats_buffers.items():
             for key, buffer in ds_buffers.items():
                 # Create a unique name and register as submodule
-                name = f"buffer_{dataset.replace('/', '_').replace('-', '_')}_{key.replace('.', '_')}"
+                name = f"buffer_{dataset_idx}_{key.replace('.', '_')}"
                 setattr(self, name, buffer)
     
     # TODO(rcadene): should we remove torch.no_grad?
     @torch.no_grad
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         batch = dict(batch)  # shallow copy avoids mutating the input batch
-        data_sources = batch.pop("dataset")     # repo_id
-
-        # Group indices by dataset
-        source_indices = defaultdict(list)
-        for i, source in enumerate(data_sources):
-            source_indices[source].append(i)
+        dataset_idx = batch.pop("dataset_index")     # repo_id
 
         for key, ft in self.features.items():
             if key not in batch:
@@ -339,46 +334,31 @@ class MultiDatasetNormalize(nn.Module):
             norm_mode = self.norm_map.get(ft.type, NormalizationMode.IDENTITY)
             if norm_mode is NormalizationMode.IDENTITY:
                 continue
+            try:
+                buffer = getattr(self, "buffer_" + str(dataset_idx.item()) + "_" + key.replace(".", "_"))
+            except KeyError:
+                available = ", ".join(self.stats_buffers.keys())
+                raise KeyError(
+                    f"No stats for dataset index'{dataset_idx}' and feature '{key}'. "
+                    f"Available datasets: {available}"
+                ) from None
 
-            x = batch[key]
-            for source, indices in source_indices.items():
-                # Skip if no data for this source
-                if not indices:
-                    continue
-
-                try:
-                    buffer = getattr(self, "buffer_" + source.replace('/', '_').replace('-', '_') + "_" + key.replace(".", "_"))
-                except KeyError:
-                    available = ", ".join(self.stats_buffers.keys())
-                    raise KeyError(
-                        f"No stats for dataset '{source}' and feature '{key}'. "
-                        f"Available datasets: {available}"
-                    ) from None
-                
-                # Extract the slice of data for this source
-                x_slice = x[indices]
-
-                if norm_mode is NormalizationMode.MEAN_STD:
-                    mean = buffer["mean"]
-                    std = buffer["std"]
-                    assert not torch.isinf(mean).any(), _no_stats_error_str(f"mean for {key} in {source}")
-                    assert not torch.isinf(std).any(), _no_stats_error_str(f"std for {key} in {source}")
-                    x_slice = (x_slice - mean) / (std + 1e-8)
-                elif norm_mode is NormalizationMode.MIN_MAX:
-                    min_val, max_val = buffer["min"], buffer["max"]
-                    assert not torch.isinf(min_val).any(), _no_stats_error_str(f"min for {key} in {source}")
-                    assert not torch.isinf(max_val).any(), _no_stats_error_str(f"max for {key} in {source}")
-                    # normalize to [0,1]
-                    x_slice = (x_slice - min_val) / (max_val - min_val + 1e-8)
-                    # normalize to [-1, 1]
-                    x_slice = x_slice * 2 - 1
-                else:
-                    raise ValueError(norm_mode)
-                
-                # Update the original tensor
-                x[indices] = x_slice
-
-            batch[key] = x  # Update the batch with normalized values
+            if norm_mode is NormalizationMode.MEAN_STD:
+                mean = buffer["mean"]
+                std = buffer["std"]
+                assert not torch.isinf(mean).any(), _no_stats_error_str(f"mean for {key} in {dataset_idx}")
+                assert not torch.isinf(std).any(), _no_stats_error_str(f"std for {key} in {dataset_idx}")
+                batch[key] = (batch[key] - mean) / (std + 1e-8)
+            elif norm_mode is NormalizationMode.MIN_MAX:
+                min_val, max_val = buffer["min"], buffer["max"]
+                assert not torch.isinf(min_val).any(), _no_stats_error_str(f"min for {key} in {dataset_idx}")
+                assert not torch.isinf(max_val).any(), _no_stats_error_str(f"max for {key} in {dataset_idx}")
+                # normalize to [0,1]
+                batch[key] = (batch[key] - min) / (max - min + 1e-8)
+                # normalize to [-1, 1]
+                batch[key] = batch[key] * 2 - 1
+            else:
+                raise ValueError(norm_mode)
 
         return batch
 
@@ -494,10 +474,10 @@ class MultiDatasetUnnormalize(nn.Module):
         self.norm_map = norm_map
         self.stats = stats
         stats_buffers = create_multi_stats_buffers(features, norm_map, stats)
-        for dataset, ds_buffers in stats_buffers.items():
+        for dataset_idx, ds_buffers in stats_buffers.items():
             for key, buffer in ds_buffers.items():
                 # Create a unique name and register as submodule
-                name = f"buffer_{dataset.replace('/', '_').replace('-', '_')}_{key.replace('.', '_')}"
+                name = f"buffer_{dataset_idx}_{key.replace('.', '_')}"
                 setattr(self, name, buffer)
     
     # TODO(rcadene): should we remove torch.no_grad?
@@ -521,17 +501,16 @@ class MultiDatasetUnnormalize(nn.Module):
                 continue
 
             x = batch[key]
-            for source, indices in source_indices.items():
+            for dataset_idx, indices in source_indices.items():
                 # Skip if no data for this source
                 if not indices:
                     continue
-
                 try:
-                    buffer = getattr(self, "buffer_" + source.replace('/', '_').replace('-', '_') + "_" + key.replace(".", "_"))
+                    buffer = getattr(self, "buffer_" + dataset_idx + "_" + key.replace(".", "_"))
                 except KeyError:
                     available = ", ".join(self.stats_buffers.keys())
                     raise KeyError(
-                        f"No stats for dataset '{source}' and feature '{key}'. "
+                        f"No stats for dataset idx '{dataset_idx}' and feature '{key}'. "
                         f"Available datasets: {available}"
                     ) from None
                 

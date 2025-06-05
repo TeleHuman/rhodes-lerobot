@@ -1135,12 +1135,11 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
 
         ### prepare for the normalization preprocessing
         ### NOTE: this part is dependent on the requirement of the current policy type
-        self.stats = {dataset.repo_id: dataset.meta.stats for dataset in self._datasets}
+        self.stats = {self.repo_id_to_index[dataset.repo_id]: dataset.meta.stats for dataset in self._datasets}
 
         self.features_to_be_normalized = dataset_to_policy_features(self.intersection_features)
         self.normalize = MultiDatasetNormalize(self.features_to_be_normalized, self.policy_normalization_mapping, self.stats)
         
-        import ipdb; ipdb.set_trace()
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
         
@@ -1252,8 +1251,10 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
             break
         else:
             raise AssertionError("We expect the loop to break out as long as the index is within bounds.")
+        import ipdb; ipdb.set_trace()
         item = self._datasets[dataset_idx][idx - start_idx]
         item["dataset_index"] = torch.tensor(dataset_idx)
+        item = self.normalize(item)
         for data_key in self.disabled_features:
             if data_key in item:
                 del item[data_key]
