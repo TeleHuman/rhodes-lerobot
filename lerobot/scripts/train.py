@@ -141,7 +141,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
         def save_model_hook(models, weights, output_dir):
             # NOTE: When using DeepSpeed, we need save model on each card
             # if accelerator.is_main_process:
-            models[0].save_pretrained(os.path.join(output_dir, "transformer_flow"))
+            models[0].save_pretrained(os.path.join(output_dir, "pi0_policy"))
             if not cfg.use_deepspeed:
                 weights.pop()
 
