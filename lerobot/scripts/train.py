@@ -53,6 +53,7 @@ from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.scripts.eval import eval_policy
 
+from packaging import version
 
 def update_policy(
     train_metrics: MetricsTracker,
@@ -75,18 +76,22 @@ def update_policy(
 
     if accelerator:
         accelerator.backward(loss)
-        accelerator.unscale_gradients(optimizer=optimizer)
-        if accelerator.is_main_process:
-            accelerator.wait_for_everyone()
-            import ipdb; ipdb.set_trace()
+        # REVIEW: It isn't necessary to call it here. It will be called in accelerator.clip_grad_norm_:
+        # https://github.com/huggingface/accelerate/blob/main/src/accelerate/accelerator.py#L2628
+        # accelerator.unscale_gradients(optimizer=optimizer)
+        # if accelerator.is_main_process:
+        #     accelerator.wait_for_everyone()
+        #     import ipdb; ipdb.set_trace()
         ## option 1
-        grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm, error_if_nonfinite=False)
+        if accelerator.sync_gradients:
+            trainable_params = list(filter(lambda p: p.requires_grad, policy.parameters()))
+            grad_norm = accelerator.clip_grad_norm_(trainable_params, grad_clip_norm, error_if_nonfinite=False)
         ## option 2
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            policy.parameters(),
-            grad_clip_norm,
-            error_if_nonfinite=False,
-        )
+        # grad_norm = torch.nn.utils.clip_grad_norm_(
+        #     policy.parameters(),
+        #     grad_clip_norm,
+        #     error_if_nonfinite=False,
+        # )
         optimizer.step()
     else:
         grad_scaler.scale(loss).backward()
@@ -130,12 +135,47 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
 
+    # `accelerate` 0.16.0 will have better support for customized saving
+    if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
+        # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
+        def save_model_hook(models, weights, output_dir):
+            # NOTE: When using DeepSpeed, we need save model on each card
+            # if accelerator.is_main_process:
+            models[0].save_pretrained(os.path.join(output_dir, "transformer_flow"))
+            if not cfg.use_deepspeed:
+                weights.pop()
+
+
+        def load_model_hook(models, input_dir):
+            from lerobot.common.policies.pi0.modeling_pi0 import PI0Policy
+            for i in range(len(models)):
+                # pop models so that they are not loaded again
+                model = models.pop()
+
+                load_model = PI0Policy.from_pretrained(
+                    input_dir
+                )
+                model.register_to_config(**load_model.config)
+
+                model.load_state_dict(load_model.state_dict())
+                del load_model
+
+        accelerator.register_save_state_pre_hook(save_model_hook)
+        accelerator.register_load_state_pre_hook(load_model_hook)
+
 
     ##### TODO: (chenyou fan) I'm not sure this works as intended, are the metrics reported correct?
     ##### We should probably integrate accelerate's WandBTracker inside our WandBLogger instead.
-    if accelerator and not accelerator.is_main_process:
+    
+    if accelerator:
         # Disable logging on non-main processes.
         cfg.wandb.enable = False
+
+        if accelerator.is_main_process:
+            # TODO: maybe more config parameters for tracking
+            log_cfg = {"seed": cfg.seed}
+            accelerator.init_trackers("pi0_pretrain", config=log_cfg, init_kwargs={"wandb": {"name": f"pi0_pretrain",
+                                                                                    "dir": '/gemini/user/private/wandb'}})
 
     if cfg.wandb.enable and cfg.wandb.project:
         wandb_logger = WandBLogger(cfg)
@@ -287,30 +327,37 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
             and (not accelerator or accelerator.is_main_process)
         )
 
-        if is_log_step:
+        if (is_log_step or step == 1) and (not accelerator or accelerator.is_main_process):
             logging.info(train_tracker)
             if wandb_logger:
                 wandb_log_dict = train_tracker.to_dict()
                 if output_dict:
                     wandb_log_dict.update(output_dict)
                 wandb_logger.log_dict(wandb_log_dict, step)
+            elif accelerator:
+                # NOTE: wandb_log_dict should be a dictionary-like object containing only types `int`, `float`, or `str`.
+                accelerator.log(wandb_log_dict, step)
             train_tracker.reset_averages()
 
         if cfg.save_checkpoint and is_saving_step:
-            if accelerator:
-                accelerator.wait_for_everyone()
-
+            
             logging.info(f"Checkpoint policy after step {step}")
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
             #### TODO: (chenyou fan) 这里看下是不是能换成accelerator的save_state方法
-            save_checkpoint(
-                checkpoint_dir,
-                step,
-                cfg,
-                policy if not accelerator else accelerator.unwrap_model(policy),
-                optimizer,
-                lr_scheduler,
-            )
+            if accelerator:
+                accelerator.wait_for_everyone()
+                # NOTE: when using DeepSpeed, we need to save on each card
+                accelerator.save_state(checkpoint_dir)
+            else:
+                save_checkpoint(
+                    checkpoint_dir,
+                    step,
+                    cfg,
+                    policy,
+                    optimizer,
+                    lr_scheduler,
+                )
+
             update_last_checkpoint(checkpoint_dir)
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
@@ -362,10 +409,22 @@ if __name__ == "__main__":
     init_logging()
     if is_launched_with_accelerate():
         import accelerate
+        from accelerate.utils import ProjectConfiguration
+        import os
 
         # We set step_scheduler_with_optimizer False to prevent accelerate from
         # adjusting the lr_scheduler steps based on the num_processes
-        accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
+        # TODO: i don't know how to get cfg here
+        logging_dir = os.path.join(cfg.output_dir, 'logs')
+        accelerator_project_config = ProjectConfiguration(
+            project_dir=cfg.output_dir, logging_dir=logging_dir)
+
+        accelerator = accelerate.Accelerator(
+            gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+            mixed_precision=cfg.mixed_precision,
+            log_with='wandb',
+            project_config=accelerator_project_config,
+            step_scheduler_with_optimizer=False)
         train(accelerator=accelerator)
     else:
         train()

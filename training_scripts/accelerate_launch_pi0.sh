@@ -23,9 +23,25 @@ MIXED_PRECISION="bf16" # fp16 or bf16
 MAIN_PROCESS_PORT=29500
 
 ### accelerate launch command
+# accelerate launch \
+#     --multi_gpu \
+#     --num_processes=$GPUS \
+#     --main_process_port=$MAIN_PROCESS_PORT \
+#     --mixed_precision=$MIXED_PRECISION \
+#     lerobot/scripts/train.py \
+#     --dataset.repo_id=$DATASET_REPO_ID \
+#     --dataset.root=$DATASET_ROOT \
+#     --policy.path=$POLICY_PATH \
+#     --policy.local_files_only=True \
+#     --output_dir=$OUTPUT_DIR \
+#     --batch_size=$BATCH_SIZE
+
+### accelerate launch command with deepspeed
 accelerate launch \
-    --multi_gpu \
+    --use_deepspeed \
     --num_processes=$GPUS \
+    --deepspeed_config_file training_scripts/deepspeed_config/zero_stage1_config.json \
+    --gradient_clipping=1.0 \
     --main_process_port=$MAIN_PROCESS_PORT \
     --mixed_precision=$MIXED_PRECISION \
     lerobot/scripts/train.py \
