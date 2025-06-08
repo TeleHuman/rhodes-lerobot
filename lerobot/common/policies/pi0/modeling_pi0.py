@@ -264,22 +264,22 @@ class PI0Policy(PreTrainedPolicy):
             logging.info(f"Enabling action concatenate automatically: {action_keys=}")
 
         # NOTE: this is compatible with the single-source dataset, but it requires adding a key named 'dataset' to the batch.
-        self.normalize_inputs = MultiDatasetNormalize(config.input_features, config.normalization_mapping, dataset_stats)
-        self.normalize_targets = MultiDatasetNormalize(
-            config.output_features, config.normalization_mapping, dataset_stats
-        )
-        self.unnormalize_outputs = MultiDatasetUnnormalize(
-            config.output_features, config.normalization_mapping, dataset_stats
-        )
+        # NOTE: The following code is DEPRECATED, since we have normalized the multi-source dataset in the dataset class.
+        # self.normalize_inputs = MultiDatasetNormalize(config.input_features, config.normalization_mapping, dataset_stats)
+        # self.normalize_targets = MultiDatasetNormalize(
+        #     config.output_features, config.normalization_mapping, dataset_stats
+        # )
+        # self.unnormalize_outputs = MultiDatasetUnnormalize(
+        #     config.output_features, config.normalization_mapping, dataset_stats
+        # )
 
-        # DEPRECATED: original lerobot single-source normalization
-        # self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
-        # self.normalize_targets = Normalize(
-        #     config.output_features, config.normalization_mapping, dataset_stats
-        # )
-        # self.unnormalize_outputs = Unnormalize(
-        #     config.output_features, config.normalization_mapping, dataset_stats
-        # )
+        self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
+        self.normalize_targets = Normalize(
+            config.output_features, config.normalization_mapping, dataset_stats
+        )
+        self.unnormalize_outputs = Unnormalize(
+            config.output_features, config.normalization_mapping, dataset_stats
+        )
 
         self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
         self.model = PI0FlowMatching(config)

@@ -11,11 +11,12 @@ DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 # Output directory
-OUTPUT_DIR="outputs/train_pi0/0603_bridge_data_ft"
+OUTPUT_DIR="$MY_HOME/train_pi0/bridge_data_ft_bs8_steps280k"
 
 # Training Parameters
 BATCH_SIZE=8
-
+TOTAL_STEPS=280000
+SAVE_FREQ=20000
 
 
 python lerobot/scripts/train.py \
@@ -24,4 +25,4 @@ python lerobot/scripts/train.py \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=True \
     --output_dir=$OUTPUT_DIR \
-    --batch_size=$BATCH_SIZE
+    --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ
