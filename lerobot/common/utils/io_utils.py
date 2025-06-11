@@ -24,7 +24,7 @@ JsonLike = str | int | float | bool | None | list["JsonLike"] | dict[str, "JsonL
 T = TypeVar("T", bound=JsonLike)
 
 
-def write_video(video_path, stacked_frames, fps):
+def write_video(video_path, stacked_frames, fps=30):
     # Filter out DeprecationWarnings raised from pkg_resources
     with warnings.catch_warnings():
         warnings.filterwarnings(

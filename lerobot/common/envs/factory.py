@@ -18,7 +18,7 @@ import importlib
 import gymnasium as gym
 
 from lerobot.common.envs.configs import AlohaEnv, EnvConfig, PushtEnv, XarmEnv
-
+from simpler_env import rhodes_make
 
 def make_env_config(env_type: str, **kwargs) -> EnvConfig:
     if env_type == "aloha":
@@ -47,6 +47,31 @@ def make_env(cfg: EnvConfig, n_envs: int = 1, use_async_envs: bool = False) -> g
     Returns:
         gym.vector.VectorEnv: The parallelized gym.env instance.
     """
+    
+    if cfg.type=="simpler_env":
+        env_fns = [lambda: rhodes_make(cfg.task,**cfg.gym_kwargs) for _ in range(n_envs)]
+        
+        EnvCls = gym.vector.AsyncVectorEnv if use_async_envs else gym.vector.SyncVectorEnv
+        return EnvCls(env_fns)
+    
+    """
+    注意，rhodes_make是我在simpler_env中定义的创建环境函数，位置处在：Simplerenv-OpenVLA/simpler_env/__init__.py中，定义如下：
+        
+    def rhodes_make(task_name,**input_kwargs):
+        assert task_name in ENVIRONMENTS, f"Task {task_name} is not supported. Environments: \n {ENVIRONMENTS}"
+        env_name, kwargs = ENVIRONMENT_MAP[task_name]
+        merged = {
+        **kwargs,
+        "prepackaged_config": True,
+        **input_kwargs,
+            }
+        env = gym.make(env_name ,**merged)
+        return env
+        
+    如果需要eval，可自行将此函数加到自己的Simpler_env中，这样可免于push Simpler env到我们的github，保持工作区占用更小内存，更干净。
+    
+    """  
+      
     if n_envs < 1:
         raise ValueError("`n_envs must be at least 1")
 

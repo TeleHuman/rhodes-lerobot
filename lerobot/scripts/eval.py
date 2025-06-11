@@ -64,7 +64,7 @@ import torch
 from termcolor import colored
 from torch import Tensor, nn
 from tqdm import trange
-
+from collections.abc import MutableMapping
 from lerobot.common.envs.factory import make_env
 from lerobot.common.envs.utils import add_envs_task, check_env_attributes_and_types, preprocess_observation
 from lerobot.common.policies.factory import make_policy
@@ -72,6 +72,8 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.policies.utils import get_device_from_parameters
 from lerobot.common.utils.io_utils import write_video
 from lerobot.common.utils.random_utils import set_seed
+from collections import OrderedDict
+from transforms3d.euler import euler2axangle
 from lerobot.common.utils.utils import (
     get_safe_torch_device,
     init_logging,
@@ -80,6 +82,209 @@ from lerobot.common.utils.utils import (
 from lerobot.configs import parser
 from lerobot.configs.eval import EvalPipelineConfig
 
+
+##################the functions I defined###################
+
+def pretty_print_observation(obs: dict, indent: int = 0, key_name: str = "obs"):
+    prefix = " " * indent
+
+    for k, v in obs.items():
+        if isinstance(v, dict):
+            print(f"{prefix}{k}/")
+            pretty_print_observation(v, indent + 2, key_name=k)
+        elif hasattr(v, "shape"):
+            shape = tuple(v.shape)
+            shape_str = str(shape)  
+            dt = getattr(v, "dtype", None)
+            dtype_str = dt.name if hasattr(dt, "name") else type(v).__name__
+            print(f"{prefix}{k:<20} shape={shape_str:<15} dtype={dtype_str}")
+        else:
+            s = str(v)
+            if len(s) > 80:
+                s = s[:77] + "..."
+            print(f"{prefix}{k:<20} type={type(v).__name__:<10} value={s}")
+
+
+def flatten_dict(d, parent_key='', sep='_'):
+    """
+    Recursively flattens a nested dictionary, concatenating keys with a separator.
+    """
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+
+def qpos_to_xyzrpy_pad_gripper(agent_qpos: np.ndarray) -> np.ndarray:
+    """
+    将 agent_qpos (B,8) -> (B,8)，
+    输入格式 assumed: [x,y,z, qx,qy,qz,qw, gripper]
+    输出格式         : [x,y,z, roll,pitch,yaw, pad, gripper]
+    pad 列全 0。
+    """
+    pos     = agent_qpos[:, 0:3]    # (B,3)
+    quat    = agent_qpos[:, 3:7]    # (B,4)  [qx, qy, qz, qw]
+    gripper = agent_qpos[:, 7:8]    # (B,1)
+    x = quat[:, 0]; y = quat[:, 1]; z = quat[:, 2]; w = quat[:, 3]
+    # roll (x-axis rotation)
+    sinr_cosp = 2 * (w * x + y * z)
+    cosr_cosp = 1 - 2 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+    # pitch (y-axis rotation)
+    sinp = 2 * (w * y - z * x)
+    # clamp
+    pitch = np.where(
+        np.abs(sinp) >= 1.0,
+        np.sign(sinp) * (np.pi / 2),
+        np.arcsin(sinp),
+    )
+    # yaw (z-axis rotation)
+    siny_cosp = 2 * (w * z + x * y)
+    cosy_cosp = 1 - 2 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+    B = agent_qpos.shape[0]
+    pad = np.zeros((B, 1), dtype=agent_qpos.dtype)
+    euler = np.stack([roll, pitch, yaw], axis=1)  # (B,3)
+    out = np.concatenate([pos, euler, pad, gripper], axis=1)
+    return out
+
+
+def myprocess_observation(observation):
+    """
+    Processes the nested observation dictionary to extract relevant features
+    and return them in a format suitable for the policy.
+    """
+    # Flatten the nested dictionary
+    flat_obs = flatten_dict(observation)
+
+    # Extract agent_qpos as action (agent_pos)
+    agent_pos = flat_obs.get('agent_qpos', None)   #8
+    tcp_pos= flat_obs.get('extra_tcp_pose', None)   #7
+
+    # Extract image data (overhead_camera/rgb)
+    overhead_camera_rgb = flat_obs.get('image_3rd_view_camera_rgb', None)
+    base_camera_rgb = flat_obs.get('image_base_camera_rgb', None)
+    if agent_pos is not None:
+        agent_pos = np.array(agent_pos)  # Convert to numpy array if needed
+    if tcp_pos is not None:
+        tcp_pos = np.array(tcp_pos)  # Convert to numpy array if needed
+        # agent_pos=np.concatenate([agent_pos,tcp_pos],axis=-1)
+    agent_pos=qpos_to_xyzrpy_pad_gripper(agent_pos)
+    return {
+        "agent_pos": agent_pos,
+        "pixels":{
+        "overhead": overhead_camera_rgb,
+        "base":    base_camera_rgb,
+            }
+         #'action':actions
+    }
+
+
+
+def to_native(x):
+   
+    if isinstance(x, dict):
+        return {k: to_native(v) for k,v in x.items()}
+    if isinstance(x, list):
+        return [to_native(v) for v in x]
+    if isinstance(x, np.generic):
+        return x.item()
+    return x
+
+
+def pi0_raw_action_2_action(
+    raw_actions: np.ndarray,
+    policy_setup: str = "widowx_bridge",
+    previous_gripper_action=None,
+    sticky_action_is_on=None,
+    gripper_action_repeat=None,
+    sticky_gripper_action=None,
+):
+    """
+    这个函数参照Simpler_env中对于动作的处理，将策略输出的动作处理后输入环境
+    raw_actions: (B, 7+)，这里假设前 7 维是 [x,y,z, rx,ry,rz, open_gripper]
+    返回:
+      actions:             np.ndarray, shape (B,7)  -> [x,y,z, ax,ay,az, grip]
+      previous_gripper_action:  np.ndarray, shape (B,1)
+      sticky_action_is_on:      np.ndarray, shape (B,) bool
+      gripper_action_repeat:    np.ndarray, shape (B,) int
+      sticky_gripper_action:    np.ndarray, shape (B,1)
+    """
+    B = raw_actions.shape[0]
+
+    # 状态初始化（仅第一次）
+    if previous_gripper_action is None:
+        previous_gripper_action = np.zeros((B, 1))
+    if sticky_action_is_on is None:
+        sticky_action_is_on = np.zeros(B, dtype=bool)
+    if gripper_action_repeat is None:
+        gripper_action_repeat = np.zeros(B, dtype=int)
+    if sticky_gripper_action is None:
+        sticky_gripper_action = np.zeros((B, 1))
+
+    # 拆分动作向量
+    world_vectors   = raw_actions[:,  :3]   # (B,3)
+    rotation_deltas = raw_actions[:, 3:6]   # (B,3)
+    open_grippers   = raw_actions[:, 6:7]   # (B,1)
+
+    # Euler -> axis-angle（loop）
+    axangles = []
+    for r, p, y in rotation_deltas:
+        ax, ang = euler2axangle(r, p, y)
+        axangles.append(ax * ang)
+    rot_axangles = np.stack(axangles, axis=0)  # (B,3)
+
+    # 计算初始相对 gripper diff
+    relative_gripper_action = previous_gripper_action - open_grippers  # (B,1)
+
+    # 根据不同后端循环更新 gripper 状态
+    if policy_setup == "google_robot":
+        sticky_gripper_num_repeat = 10  # 或从 cfg 里读
+
+        # 对每条样本做 sticky 逻辑
+        for i in range(B):
+            # 检测“明显翻转”触发 sticky
+            if abs(relative_gripper_action[i, 0]) > 0.5 and not sticky_action_is_on[i]:
+                sticky_action_is_on[i]       = True
+                sticky_gripper_action[i, 0]  = relative_gripper_action[i, 0]
+                previous_gripper_action[i, 0]= open_grippers[i, 0]
+
+            # 如果正在 sticky，就重复同一个动作，并计数
+            if sticky_action_is_on[i]:
+                gripper_action_repeat[i] += 1
+                relative_gripper_action[i, 0] = sticky_gripper_action[i, 0]
+
+                # 若达到重复上限，则重置 sticky
+                if gripper_action_repeat[i] >= sticky_gripper_num_repeat:
+                    sticky_action_is_on[i]       = False
+                    gripper_action_repeat[i]     = 0
+                    sticky_gripper_action[i, 0]  = 0.0
+
+            else:
+                # 非 sticky 状态，正常差值 already in relative_gripper_action
+                previous_gripper_action[i, 0] = open_grippers[i, 0]
+
+        gripper_out = relative_gripper_action  # (B,1)
+
+    elif policy_setup == "widowx_bridge":
+        # 直接二值化
+        gripper_out = 2.0 * (open_grippers > 0.5) - 1.0  # (B,1)
+
+    else:
+        raise ValueError(f"Unknown policy_setup: {policy_setup}")
+
+    # 最终拼接：(B,3) + (B,3) + (B,1) → (B,7)
+    actions = np.concatenate([world_vectors, rot_axangles, gripper_out], axis=1)
+
+    return actions
+
+
+##################the functions I defined###################
 
 def rollout(
     env: gym.vector.VectorEnv,
@@ -124,7 +329,10 @@ def rollout(
 
     # Reset the policy and environments.
     policy.reset()
+
     observation, info = env.reset(seed=seeds)
+    #print("the observation before my conversion to it looks like   →")
+    #pretty_print_observation(observation)
     if render_callback is not None:
         render_callback(env)
 
@@ -133,7 +341,7 @@ def rollout(
     all_rewards = []
     all_successes = []
     all_dones = []
-
+    
     step = 0
     # Keep track of which environments are done.
     done = np.array([False] * env.num_envs)
@@ -147,7 +355,10 @@ def rollout(
     check_env_attributes_and_types(env)
     while not np.all(done):
         # Numpy array to tensor and changing dictionary keys to LeRobot policy format.
-        observation = preprocess_observation(observation)
+        #import ipdb ;ipdb.set_trace()
+        observation= myprocess_observation(observation)
+        
+        observation = preprocess_observation(observation)       
         if return_observations:
             all_observations.append(deepcopy(observation))
 
@@ -158,23 +369,27 @@ def rollout(
         # Infer "task" from attributes of environments.
         # TODO: works with SyncVectorEnv but not AsyncVectorEnv
         observation = add_envs_task(env, observation)
-
+     
         with torch.inference_mode():
             action = policy.select_action(observation)
-
+        
         # Convert to CPU / numpy.
-        action = action.to("cpu").numpy()
-        assert action.ndim == 2, "Action dimensions should be (batch, action_dim)"
-
+        action = action.to("cpu").squeeze(0).numpy()
+        if isinstance(env,gym.vector.VectorEnv):
+            assert action.ndim == 2,    "Action dimensions should be (batch, action_dim)"
+        else:
+           pass
+        
         # Apply the next action.
+        action=pi0_raw_action_2_action(action)
         observation, reward, terminated, truncated, info = env.step(action)
         if render_callback is not None:
             render_callback(env)
-
+        
         # VectorEnv stores is_success in `info["final_info"][env_index]["is_success"]`. "final_info" isn't
         # available of none of the envs finished.
         if "final_info" in info:
-            successes = [info["is_success"] if info is not None else False for info in info["final_info"]]
+            successes = [info["success"] if info is not None else False for info in info["final_info"]]
         else:
             successes = [False] * env.num_envs
 
@@ -185,16 +400,18 @@ def rollout(
         all_rewards.append(torch.from_numpy(reward))
         all_dones.append(torch.from_numpy(done))
         all_successes.append(torch.tensor(successes))
-
         step += 1
         running_success_rate = (
             einops.reduce(torch.stack(all_successes, dim=1), "b n -> b", "any").numpy().mean()
         )
         progbar.set_postfix({"running_success_rate": f"{running_success_rate.item() * 100:.1f}%"})
         progbar.update()
-
+    
+  
+    all_final_info=info["final_info"]
     # Track the final observation.
     if return_observations:
+        observation= myprocess_observation(observation)
         observation = preprocess_observation(observation)
         all_observations.append(deepcopy(observation))
 
@@ -204,7 +421,9 @@ def rollout(
         "reward": torch.stack(all_rewards, dim=1),
         "success": torch.stack(all_successes, dim=1),
         "done": torch.stack(all_dones, dim=1),
+        "all_final_info":all_final_info,
     }
+   
     if return_observations:
         stacked_observations = {}
         for key in all_observations[0]:
@@ -280,7 +499,7 @@ def eval_policy(
 
     if return_episode_data:
         episode_data: dict | None = None
-
+    all_final_info=[]
     # we dont want progress bar when we use slurm, since it clutters the logs
     progbar = trange(n_batches, desc="Stepping through eval batches", disable=inside_slurm())
     for batch_ix in progbar:
@@ -306,6 +525,21 @@ def eval_policy(
         # Figure out where in each rollout sequence the first done condition was encountered (results after
         # this won't be included).
         n_steps = rollout_data["done"].shape[1]
+        
+        ori_final_info_this_batch=rollout_data["all_final_info"].tolist()
+        
+        log_final_info_this_batch=[]
+        for entry in ori_final_info_this_batch :
+            if entry is None:
+                ori_final_info_this_batch.append(None)
+                continue
+            stats = entry.get("episode_stats")
+            if isinstance(stats, OrderedDict):
+                entry["episode_stats"] = dict(stats)
+            log_final_info_this_batch.append(entry)
+            
+        log_final_info_this_batch= to_native(log_final_info_this_batch)
+        all_final_info.extend(log_final_info_this_batch)
         # Note: this relies on a property of argmax: that it returns the first occurrence as a tiebreaker.
         done_indices = torch.argmax(rollout_data["done"].to(int), dim=1)
 
@@ -359,7 +593,7 @@ def eval_policy(
                     args=(
                         str(video_path),
                         stacked_frames[: done_index + 1],  # + 1 to capture the last observation
-                        env.unwrapped.metadata["render_fps"],
+                       #env.unwrapped.metadata["render_fps"],
                     ),
                 )
                 thread.start()
@@ -383,13 +617,15 @@ def eval_policy(
                 "max_reward": max_reward,
                 "success": success,
                 "seed": seed,
+                "final_info":all_final_info,
             }
-            for i, (sum_reward, max_reward, success, seed) in enumerate(
+            for i, (sum_reward, max_reward, success, seed,all_final_info) in enumerate(
                 zip(
                     sum_rewards[:n_episodes],
                     max_rewards[:n_episodes],
                     all_successes[:n_episodes],
                     all_seeds[:n_episodes],
+                    all_final_info[:n_episodes],
                     strict=True,
                 )
             )
@@ -459,7 +695,7 @@ def _compile_episode_data(
 
 @parser.wrap()
 def eval_main(cfg: EvalPipelineConfig):
-    logging.info(pformat(asdict(cfg)))
+    #logging.info(pformat(asdict(cfg)))
 
     # Check device is available
     device = get_safe_torch_device(cfg.policy.device, log=True)

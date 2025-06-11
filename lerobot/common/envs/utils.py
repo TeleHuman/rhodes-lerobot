@@ -15,7 +15,8 @@
 # limitations under the License.
 import warnings
 from typing import Any
-
+# from mani_skill2_real2sim.envs.sapien_env import BaseEnv
+# from mani_skill2_real2sim.envs.custom_scenes import *
 import einops
 import gymnasium as gym
 import numpy as np
@@ -103,7 +104,7 @@ def check_env_attributes_and_types(env: gym.vector.VectorEnv) -> None:
 
         if not (hasattr(env.envs[0], "task_description") and hasattr(env.envs[0], "task")):
             warnings.warn(
-                "The environment does not have 'task_description' and 'task'. Some policies require these features.",
+                 ""     ,                 #"The environment does not have 'task_description' and 'task'. Some policies require these features.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -117,11 +118,19 @@ def check_env_attributes_and_types(env: gym.vector.VectorEnv) -> None:
 
 def add_envs_task(env: gym.vector.VectorEnv, observation: dict[str, Any]) -> dict[str, Any]:
     """Adds task feature to the observation dict with respect to the first environment attribute."""
-    if hasattr(env.envs[0], "task_description"):
-        observation["task"] = env.call("task_description")
-    elif hasattr(env.envs[0], "task"):
-        observation["task"] = env.call("task")
-    else:  #  For envs without language instructions, e.g. aloha transfer cube and etc.
-        num_envs = observation[list(observation.keys())[0]].shape[0]
-        observation["task"] = ["" for _ in range(num_envs)]
+    if isinstance(env, gym.vector.VectorEnv):
+        
+        observation["task"]=list( env.call("get_language_instruction"))
+      
+    
+    # if isinstance(env, gym.vector.VectorEnv):
+    #     if hasattr(env.envs[0], "task_description"):
+    #         observation["task"] = env.call("task_description")
+    #     elif hasattr(env.envs[0], "task"):
+    #         observation["task"] = env.call("task")
+    #     else:  #  For envs without language instructions, e.g. aloha transfer cube and etc.
+    #         num_envs = observation[list(observation.keys())[0]].shape[0]
+    #         observation["task"] = ["" for _ in range(num_envs)]
+    else:
+        observation["task"]=[env.get_language_instruction()]
     return observation

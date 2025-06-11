@@ -154,3 +154,60 @@ class XarmEnv(EnvConfig):
             "visualization_height": self.visualization_height,
             "max_episode_steps": self.episode_length,
         }
+
+
+
+@EnvConfig.register_subclass("simpler_env")
+@dataclass
+class SimplerEnv(EnvConfig):
+    
+    # SUPPORTED_OBS_MODES = ("state", "state_dict", "none", "image")
+    # SUPPORTED_REWARD_MODES = ("normalized_dense", "dense", "sparse")
+    # SUPPORTED_RENDER_MODES = ("human", "rgb_array", "cameras")
+    
+    task: str = "google_robot_pick_coke_can"      #  this is task name, not used in gym.make the mapping can be seen in Simpler_env/simpler_env/__init__.py
+    fps: int = 30
+    episode_length: int = 300
+    obs_mode: str = "rgbd"     #defined in rhodes_make 
+    # offscreen_only="ture"
+    render_mode: str = "rgb_array"
+    # visualization_width: int = 384
+    # visualization_height: int = 384
+    features: dict[str, PolicyFeature] = field(
+        default_factory=lambda: {
+            "action": PolicyFeature(type=FeatureType.ACTION, shape=(7,)),
+            "overhead": PolicyFeature(type=FeatureType.VISUAL, shape=(512, 640, 3)),
+            "base": PolicyFeature(type=FeatureType.VISUAL, shape=(128, 128, 3)),
+            "agent_pos": PolicyFeature(type=FeatureType.STATE, shape=(8,)),
+        }
+    )
+    
+    features_map: dict[str, str] = field(
+        default_factory=lambda: {
+            "action": ACTION,
+            "agent_pos": OBS_ROBOT,
+            "overhead": f"{OBS_IMAGES}.overhead",
+            "base": f"{OBS_IMAGES}.base",
+          
+        }
+    )
+
+    def __post_init__(self):
+        if self.obs_mode == "pixels_agent_pos":
+            self.features["agent_pos"] = PolicyFeature(type=FeatureType.STATE, shape=(4,))
+
+    @property
+    def gym_kwargs(self) -> dict:
+        return {
+            # "offscreen_only" : self.offscreen_only,
+            "obs_mode": self.obs_mode,
+            "render_mode": self.render_mode,
+            "renderer_kwargs":{"offscreen_only": True},
+            # "visualization_width": self.visualization_width,
+            # "visualization_height": self.visualization_height,
+            "max_episode_steps": self.episode_length,
+        }
+
+
+
+

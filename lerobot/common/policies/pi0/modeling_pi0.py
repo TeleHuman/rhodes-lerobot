@@ -50,7 +50,6 @@ policy = Pi0Policy.from_pretrained("lerobot/pi0")
 """
 
 import math
-import logging
 from collections import deque
 
 import torch
@@ -59,7 +58,7 @@ from torch import Tensor, nn
 from transformers import AutoTokenizer
 
 from lerobot.common.constants import ACTION, OBS_ROBOT
-from lerobot.common.policies.normalize import Normalize, Unnormalize, MultiDatasetNormalize, MultiDatasetUnnormalize
+from lerobot.common.policies.normalize import Normalize, Unnormalize
 from lerobot.common.policies.pi0.configuration_pi0 import PI0Config
 from lerobot.common.policies.pi0.paligemma_with_expert import (
     PaliGemmaWithExpertConfig,
@@ -219,6 +218,7 @@ def aloha_gripper_from_angular_inv(value):
     return normalize(value, min_val=0.4, max_val=1.5)
 
 
+
 class PI0Policy(PreTrainedPolicy):
     """Wrapper class around PI0FlowMatching model to train and run inference within LeRobot."""
 
@@ -241,45 +241,14 @@ class PI0Policy(PreTrainedPolicy):
         super().__init__(config)
         config.validate_features()
         self.config = config
-
-        state_keys = []
-        action_keys = []
-        for key, ft in config.input_features.items():
-            # Currently, all states are concatenated by default
-            if ft.type == "STATE" and not key.endswith('.state'):
-                state_keys.append(key)
-
-        for key, ft in config.output_features.items():
-            if ft.type == "ACTION" and not key.endswith('action'):
-                action_keys.append(key)
-
-        if len(state_keys) > 0:
-            self.state_keys = state_keys
-            self.config.concat_state = True
-            logging.info(f"Enabling state concatenate automatically: {state_keys=}")
-
-        if len(action_keys) > 0:
-            self.action_keys = action_keys
-            self.config.concat_action = True
-            logging.info(f"Enabling action concatenate automatically: {action_keys=}")
-
-        # NOTE: this is compatible with the single-source dataset, but it requires adding a key named 'dataset' to the batch.
-        self.normalize_inputs = MultiDatasetNormalize(config.input_features, config.normalization_mapping, dataset_stats)
-        self.normalize_targets = MultiDatasetNormalize(
+      
+        self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
+        self.normalize_targets = Normalize(
             config.output_features, config.normalization_mapping, dataset_stats
         )
-        self.unnormalize_outputs = MultiDatasetUnnormalize(
+        self.unnormalize_outputs = Unnormalize(
             config.output_features, config.normalization_mapping, dataset_stats
         )
-
-        # DEPRECATED: original lerobot single-source normalization
-        # self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
-        # self.normalize_targets = Normalize(
-        #     config.output_features, config.normalization_mapping, dataset_stats
-        # )
-        # self.unnormalize_outputs = Unnormalize(
-        #     config.output_features, config.normalization_mapping, dataset_stats
-        # )
 
         self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
         self.model = PI0FlowMatching(config)
@@ -311,10 +280,12 @@ class PI0Policy(PreTrainedPolicy):
         # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
         # querying the policy.
         if len(self._action_queue) == 0:
+            
             images, img_masks = self.prepare_images(batch)
+          
             state = self.prepare_state(batch)
             lang_tokens, lang_masks = self.prepare_language(batch)
-
+          
             actions = self.model.sample_actions(
                 images, img_masks, lang_tokens, lang_masks, state, noise=noise
             )
@@ -322,12 +293,12 @@ class PI0Policy(PreTrainedPolicy):
             # Unpad actions
             original_action_dim = self.config.action_feature.shape[0]
             actions = actions[:, :, :original_action_dim]
-
+           
             actions = self.unnormalize_outputs({"action": actions})["action"]
 
             if self.config.adapt_to_pi_aloha:
                 actions = self._pi_aloha_encode_actions(actions)
-
+           
             # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
             # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
             self._action_queue.extend(actions.transpose(0, 1))
@@ -385,16 +356,12 @@ class PI0Policy(PreTrainedPolicy):
 
         # Preprocess image features present in the batch
         for key in present_img_keys:
-            # commented out by Yang Zhang
-            if 'depth' in key:
-                continue    # 暂时不对depth的图像进行处理
-
             img = batch[key]
 
             if self.config.resize_imgs_with_padding is not None:
                 img = resize_with_pad(img, *self.config.resize_imgs_with_padding, pad_value=0)
 
-            # Normalize from range [0,1] to [-1,1] as expected by siglip
+            # Normalize from range [0,1] to [-1,1] as expacted by siglip
             img = img * 2.0 - 1.0
 
             bsize = img.shape[0]
@@ -464,22 +431,11 @@ class PI0Policy(PreTrainedPolicy):
 
     def prepare_state(self, batch):
         """Pad state"""
-        if self.config.concat_state:
-            # Concatenate all state keys into a single state vector
-            batch[OBS_ROBOT] = torch.cat([batch[key] for key in self.state_keys], dim=-1)
-        # Pad state to max_state_dim
-        # This is needed to ensure that the state vector has the same shape as the model expects.
         state = pad_vector(batch[OBS_ROBOT], self.config.max_state_dim)
         return state
 
     def prepare_action(self, batch):
         """Pad action"""
-        if self.config.concat_action:
-            # Concatenate all action keys into a single action vector
-            batch[ACTION] = torch.cat([batch[key] for key in self.action_keys], dim=-1)
-            batch['action_is_pad'] = batch.get(self.action_keys[0] + '_is_pad', None)
-        # Pad action to max_action_dim
-        # This is needed to ensure that the action vector has the same shape as the model expects.
         actions = pad_vector(batch[ACTION], self.config.max_action_dim)
         return actions
 
