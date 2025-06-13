@@ -165,6 +165,11 @@ def make_policy(
         # Load a pretrained policy and override the config if needed (for example, if there are inference-time
         # hyperparameters that we want to vary).
         kwargs["pretrained_name_or_path"] = cfg.pretrained_path
+
+        for cfg_override in cfg.cli_overrides:
+            key, value = cfg_override.split('=')
+            kwargs[key[2:]] = value
+        
         policy = policy_cls.from_pretrained(**kwargs)
     else:
         # Make a fresh policy.

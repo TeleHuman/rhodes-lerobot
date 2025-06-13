@@ -84,8 +84,10 @@ class TrainPipelineConfig(HubMixin):
                 else:
                     clean_cli_overrides.append(override)
 
-            self.policy = PreTrainedConfig.from_pretrained(policy_path, local_files_only=local_files_only, cli_overrides=clean_cli_overrides)
+            self.policy = PreTrainedConfig.from_pretrained(policy_path, local_files_only=local_files_only, cli_overrides=[])
             self.policy.pretrained_path = policy_path
+            ### modified by Yang Zhang
+            self.policy.cli_overrides = clean_cli_overrides
         elif self.resume:
             # The entire train config is already loaded, we just need to get the checkpoint dir
             config_path = parser.parse_arg("config_path")

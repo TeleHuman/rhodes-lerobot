@@ -52,6 +52,8 @@ policy = Pi0Policy.from_pretrained("lerobot/pi0")
 import math
 import logging
 from collections import deque
+from typing import Type
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -273,13 +275,23 @@ class PI0Policy(PreTrainedPolicy):
         #     config.output_features, config.normalization_mapping, dataset_stats
         # )
 
-        self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
-        self.normalize_targets = Normalize(
-            config.output_features, config.normalization_mapping, dataset_stats
-        )
-        self.unnormalize_outputs = Unnormalize(
-            config.output_features, config.normalization_mapping, dataset_stats
-        )
+        used_multi_lerobot_dataset = True
+        for k in dataset_stats.keys():
+            if 'observation' in k:
+                used_multi_lerobot_dataset = False
+
+        if used_multi_lerobot_dataset:
+            self.normalize_inputs = None
+            self.normalize_targets = None
+            self.unnormalize_outputs = None
+        else:
+            self.normalize_inputs = Normalize(config.input_features, config.normalization_mapping, dataset_stats)
+            self.normalize_targets = Normalize(
+                config.output_features, config.normalization_mapping, dataset_stats
+            )
+            self.unnormalize_outputs = Unnormalize(
+                config.output_features, config.normalization_mapping, dataset_stats
+            )
 
         self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
         self.model = PI0FlowMatching(config)
@@ -483,6 +495,100 @@ class PI0Policy(PreTrainedPolicy):
         # This is needed to ensure that the action vector has the same shape as the model expects.
         actions = pad_vector(batch[ACTION], self.config.max_action_dim)
         return actions
+    
+
+    #### added by Yang Zhang
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_name_or_path: str | Path,
+        *,
+        config: PI0Config | None = None,
+        force_download: bool = False,
+        resume_download: bool | None = None,
+        proxies: dict | None = None,
+        token: str | bool | None = None,
+        cache_dir: str | Path | None = None,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        strict: bool = False,
+        train_expert_from_scratch: bool = False,
+        max_state_dim: int = 32,
+        max_action_dim: int = 32,
+        **kwargs,
+    ):
+        """
+        The policy is set in evaluation mode by default using `policy.eval()` (dropout modules are
+        deactivated). To train it, you should first set it back in training mode with `policy.train()`.
+        """
+        import os
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.constants import SAFETENSORS_SINGLE_FILE
+        from huggingface_hub.errors import HfHubHTTPError
+
+        if config is None:
+            config = PI0Config.from_pretrained(
+                pretrained_name_or_path=pretrained_name_or_path,
+                force_download=force_download,
+                resume_download=resume_download,
+                proxies=proxies,
+                token=token,
+                cache_dir=cache_dir,
+                local_files_only=local_files_only,
+                revision=revision,
+                **kwargs,
+            )
+        model_id = str(pretrained_name_or_path)
+        instance = cls(config, **kwargs)
+        if os.path.isdir(model_id):
+            print("Loading weights from local directory")
+            model_file = os.path.join(model_id, SAFETENSORS_SINGLE_FILE)
+            policy = cls._load_as_safetensor(instance, model_file, config.device, strict)
+        else:
+            try:
+                model_file = hf_hub_download(
+                    repo_id=model_id,
+                    filename=SAFETENSORS_SINGLE_FILE,
+                    revision=revision,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    proxies=proxies,
+                    resume_download=resume_download,
+                    token=token,
+                    local_files_only=local_files_only,
+                )
+                policy = cls._load_as_safetensor(instance, model_file, config.device, strict)
+            except HfHubHTTPError as e:
+                raise FileNotFoundError(
+                    f"{SAFETENSORS_SINGLE_FILE} not found on the HuggingFace Hub in {model_id}"
+                ) from e
+
+        policy.to(config.device)
+
+        if train_expert_from_scratch:
+            config.max_state_dim = max_state_dim
+            config.max_action_dim = max_action_dim
+
+            ### 下面这行可以考虑注释掉，现在默认当指定新的max state dim 和 max action dim时，全参微调
+            # config.train_expert_only = True
+
+            policy.config = config
+            
+            ### TODO: randomly initialize the expert gemma model and projector
+            policy.model.paligemma_with_expert.gemma_expert.model.init_weights()
+            policy.model.state_proj = nn.Linear(max_state_dim, config.proj_width)
+            policy.model.action_in_proj = nn.Linear(max_action_dim, config.proj_width)
+            policy.model.action_out_proj = nn.Linear(config.proj_width, max_action_dim)
+            
+            policy.model.state_proj.weight.data.normal_(mean=0.0, std=0.02)
+            policy.model.state_proj.bias.data.zero_()
+            policy.model.action_in_proj.weight.data.normal_(mean=0.0, std=0.02)
+            policy.model.action_in_proj.bias.data.zero_()
+            policy.model.action_out_proj.weight.data.normal_(mean=0.0, std=0.02)
+            policy.model.action_out_proj.bias.data.zero_()
+
+        policy.eval()
+        return policy
 
 
 class PI0FlowMatching(nn.Module):

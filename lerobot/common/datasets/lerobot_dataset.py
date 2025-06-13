@@ -1215,6 +1215,16 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         ### 注意这里的intersection features现在使用最大维度的features
         ### 如果有些数据集的image shape不一致，现在会使用最大的shape
         ### 因为这个intersection会决定cfg.output_features和cfg.input_features
+
+        # NOTE: 我们目前不支持对depth的图像进行sample到batch
+        unused_keys = []
+        for k in max_features.keys():
+            if 'depth' in k:
+                unused_keys.append(k)
+
+        for k in unused_keys:
+            max_features.pop(k)
+
         self.intersection_features = max_features
 
         # prepare for the normalization preprocessing

@@ -1,8 +1,8 @@
 #!/bin/zsh
 
 # Dataset configuration
-ROBOMIND_ROOT="/gemini/space/shared_dataset/RoboMind_2_lerobot/benchmark1_0_release"
-EMBODIMENT="tienkung_gello_1rgb"
+ROBOMIND_ROOT="/gemini/space/huggingface_cache/rhodes_lerobot/Rhodes_H1_2"
+EMBODIMENT="simplified_6tasks"
 
 # Automatically discover all dataset folders under the embodiment directory
 EMBODIMENT_PATH="$ROBOMIND_ROOT/$EMBODIMENT"
@@ -35,7 +35,7 @@ fi
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 # Output directory
-OUTPUT_DIR="$MY_HOME/train_pi0/train_tienkung_gello_1rgb"
+OUTPUT_DIR="$MY_HOME/train_pi0/train_H1_2"
 
 # Training Parameters
 BATCH_SIZE=32
@@ -53,4 +53,5 @@ python lerobot/scripts/train.py \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=True \
     --output_dir=$OUTPUT_DIR \
-    --batch_size=$BATCH_SIZE
+    --batch_size=$BATCH_SIZE \
+    --num_workers=0
