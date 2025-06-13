@@ -512,7 +512,7 @@ class PI0Policy(PreTrainedPolicy):
         local_files_only: bool = False,
         revision: str | None = None,
         strict: bool = False,
-        train_expert_from_scratch: bool = False,
+        train_expert_from_scratch: bool | str = False,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
         **kwargs,
@@ -565,9 +565,12 @@ class PI0Policy(PreTrainedPolicy):
 
         policy.to(config.device)
 
+        if type(train_expert_from_scratch) == str:
+            train_expert_from_scratch = train_expert_from_scratch.lower() == 'true'
+
         if train_expert_from_scratch:
-            config.max_state_dim = max_state_dim
-            config.max_action_dim = max_action_dim
+            config.max_state_dim = int(max_state_dim)
+            config.max_action_dim = int(max_action_dim)
 
             ### 下面这行可以考虑注释掉，现在默认当指定新的max state dim 和 max action dim时，全参微调
             # config.train_expert_only = True
@@ -576,9 +579,9 @@ class PI0Policy(PreTrainedPolicy):
             
             ### TODO: randomly initialize the expert gemma model and projector
             policy.model.paligemma_with_expert.gemma_expert.model.init_weights()
-            policy.model.state_proj = nn.Linear(max_state_dim, config.proj_width)
-            policy.model.action_in_proj = nn.Linear(max_action_dim, config.proj_width)
-            policy.model.action_out_proj = nn.Linear(config.proj_width, max_action_dim)
+            policy.model.state_proj = nn.Linear(config.max_state_dim, config.proj_width)
+            policy.model.action_in_proj = nn.Linear(config.max_action_dim, config.proj_width)
+            policy.model.action_out_proj = nn.Linear(config.proj_width, config.max_action_dim)
             
             policy.model.state_proj.weight.data.normal_(mean=0.0, std=0.02)
             policy.model.state_proj.bias.data.zero_()
