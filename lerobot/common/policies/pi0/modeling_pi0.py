@@ -281,8 +281,8 @@ class PI0Policy(PreTrainedPolicy):
         #     config.output_features, config.normalization_mapping, dataset_stats
         # )
 
-        self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
-        self.model = PI0FlowMatching(config)
+        # self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
+        # self.model = PI0FlowMatching(config)
 
         self.reset()
 
@@ -339,8 +339,8 @@ class PI0Policy(PreTrainedPolicy):
             batch[OBS_ROBOT] = self._pi_aloha_decode_state(batch[OBS_ROBOT])
             batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
-        batch = self.normalize_inputs(batch)
-        batch = self.normalize_targets(batch)
+        # batch = self.normalize_inputs(batch)
+        # batch = self.normalize_targets(batch)
 
         images, img_masks = self.prepare_images(batch)
         state = self.prepare_state(batch)

@@ -324,7 +324,7 @@ class MultiDatasetNormalize(nn.Module):
     @torch.no_grad
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         batch = dict(batch)  # shallow copy avoids mutating the input batch
-        dataset_idx = batch.pop("dataset_index")     # repo_id
+        dataset_idx = batch.get("dataset_index")     # repo_id
 
         for key, ft in self.features.items():
             if key not in batch:

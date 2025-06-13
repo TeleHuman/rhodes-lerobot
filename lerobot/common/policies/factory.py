@@ -133,8 +133,7 @@ def make_policy(
 
     kwargs = {}
     if isinstance(ds_meta, dict):
-        ### TODO: 后面需要改成并集，目前用交集测试
-        assert features is not None, "Intersection features must be provided for multi-dataset training"
+        assert features is not None, "Union features must be provided for multi-dataset training"
         features = dataset_to_policy_features(features)
         kwargs["dataset_stats"] = {k: v.stats for k, v in ds_meta.items()}
 

@@ -1043,18 +1043,21 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
 def resize_with_pad(img, img_resize_shape, pad_value=-1):
     # assume no-op when width height fits already
-    if img.ndim != 4:
-        raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+    # if img.ndim != 4:
+        # raise ValueError(f"(b,c,h,w) expected, but {img.shape}")
+
+    if img.shape[-2:][::-1] == img_resize_shape:
+        return img
 
     width, height = img_resize_shape
-    cur_height, cur_width = img.shape[2:]
+    cur_height, cur_width = img.shape[-2:]
 
     ratio = max(cur_width / width, cur_height / height)
     resized_height = int(cur_height / ratio)
     resized_width = int(cur_width / ratio)
     resized_img = F.interpolate(
-        img, size=(resized_height, resized_width), mode="bilinear", align_corners=False
-    )
+        img.unsqueeze(0), size=(resized_height, resized_width), mode="bilinear", align_corners=False
+    ).squeeze(0)
 
     pad_height = max(0, int(height - resized_height))
     pad_width = max(0, int(width - resized_width))
@@ -1146,27 +1149,19 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         # 比如: observation.images.image_0, observation.images.image_1, observation.state, action
 
         ### TODO: 取features的并集
-        ### NOTE: 目前先试用交集测试
-        ### TODO: 在这里需要取出intersection_features里面每个key在所有数据集里面的最大的维度
-        self.disabled_features = set()
+        ### TODO: 在这里需要取出union_features里面每个key在所有数据集里面的最大的维度
+
         
-        # 同时计算交集features和每个key的最大维度
-        intersection_features = set(self._datasets[0].features)
+        # 同时计算并集features和每个key的最大维度
+        union_features = set()
         max_features = {}
         
-        # 初始化：从第一个数据集开始
-        for key in self._datasets[0].features:
-            max_features[key] = self._datasets[0].features[key].copy()
-        
-        # 遍历其余数据集，同时更新交集和最大维度
-        for ds in self._datasets[1:]:
-            # 更新交集
-            intersection_features.intersection_update(ds.features)
-            
-            # 对于当前数据集中的每个feature，更新最大shape
-            for key in intersection_features:
+        # 遍历所有数据集
+        for ds in self._datasets:
+            for key, current_feature in ds.features.items():
+                union_features.add(key)
+
                 if key in max_features:
-                    current_feature = ds.features[key]
                     max_feature = max_features[key]
                     
                     # 如果有shape信息，比较并更新最大的shape
@@ -1184,44 +1179,25 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
                                 raise ValueError(f"Shape length mismatch for feature {key} in dataset {ds.repo_id}")
                                 # max_feature['shape'] = current_shape
                     
-                    # 更新其他可能需要合并的属性
-                    # 如果有names信息，保持一致性检查
-                    if 'names' in current_feature and 'names' in max_feature:
-                        # 简单起见，保留第一个数据集的names，但可以在这里添加更复杂的合并逻辑
-                        # NOTE: 由于已经默认去最大维度了，这里的names已经不适用了，所以请不要参考取了最大维度后的names
-                        # 每个数据集里面每个维度的意义可能都不一样
-                        pass
-                
                 else:
-                    max_features.pop(key, None)
-        
-        
-        if len(intersection_features) == 0:
-            raise RuntimeError(
-                "Multiple datasets were provided but they had no keys common to all of them. "
-                "The multi-dataset functionality currently only keeps common keys."
-            )
-            
-        # 记录disabled features
-        for repo_id, ds in zip(self.repo_ids, self._datasets, strict=True):
-            extra_keys = set(ds.features).difference(intersection_features)
-            if len(extra_keys) > 0:
-                logging.warning(
-                    f"keys {extra_keys} of {repo_id} were disabled as they are not contained in all the "
-                    "other datasets."
-                )
-            self.disabled_features.update(extra_keys)
+                    # 初始化该 feature 的最大值
+                    max_features[key] = current_feature.copy()
+
 
         ### 注意这里的intersection features现在使用最大维度的features
         ### 如果有些数据集的image shape不一致，现在会使用最大的shape
         ### 因为这个intersection会决定cfg.output_features和cfg.input_features
-        self.intersection_features = max_features
+        self.union_features = max_features
 
         # prepare for the normalization preprocessing
         ### NOTE: this part is dependent on the requirement of the current policy type
+        # 这里的stats是根据每个数据集的metadata拿到的，所以各个数据集只包含自己有的feature的stats
         self.stats = {self.repo_id_to_index[dataset.repo_id]: dataset.meta.stats for dataset in self._datasets}
 
-        self.features_to_be_normalized = dataset_to_policy_features(self.intersection_features)
+        self.features_to_be_normalized = dataset_to_policy_features(self.union_features)
+
+        # 因为Pi0对image不做normalization，所以self.normalize.buffers里只有state和action的信息
+        # 但是在调用normalize的时候，是根据self.features_to_be_normalized来做判断的，现在用continue来跳过不存在的key
         self.normalize = MultiDatasetNormalize(self.features_to_be_normalized, self.policy_normalization_mapping, self.stats)
         
         self.image_transforms = image_transforms
@@ -1272,7 +1248,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
     def features(self) -> datasets.Features:
         features = {}
         for dataset in self._datasets:
-            features.update({k: v for k, v in dataset.hf_features.items() if k not in self.disabled_features})
+            features.update({k: v for k, v in dataset.hf_features.items()})
         return features
 
     @property
@@ -1340,21 +1316,19 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         item["dataset_index"] = torch.tensor(dataset_idx)
         item = self.normalize(item)
 
-        # import ipdb; ipdb.set_trace()
-
-        for k, v in self.features_to_be_normalized:
+        for k, v in self.features_to_be_normalized.items():
             if v.type == FeatureType.VISUAL:
-                item[k] = resize_with_pad(item[k], self.img_resize_shape, pad_value=0)
+                if k not in item:
+                    w, h = self.img_resize_shape
+                    item[k] = torch.full((3, h, w), 0, dtype=torch.float32)
+                else:
+                    item[k] = resize_with_pad(item[k], self.img_resize_shape, pad_value=0)
             
             elif v.type == FeatureType.STATE or v.type == FeatureType.ACTION:
-                item[k] = pad_vector(item[k])
+                item[k] = pad_vector(item[k], v.shape[0])
 
             else:
                 continue
-
-        for data_key in self.disabled_features:
-            if data_key in item:
-                del item[data_key]
 
         return item
 
