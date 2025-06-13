@@ -19,7 +19,7 @@ TOTAL_STEPS=280000
 SAVE_FREQ=20000
 
 
-CUDA_VISIBLE_DEVICES=1 python lerobot/scripts/train.py \
+python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --policy.path=$POLICY_PATH \
