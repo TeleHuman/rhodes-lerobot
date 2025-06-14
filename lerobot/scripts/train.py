@@ -152,8 +152,9 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     torch.backends.cuda.matmul.allow_tf32 = True
     
     ### exceptional for Pi0 ###
-    if 'bridge' in cfg.dataset.repo_id and 'pi0' == cfg.policy.type:
-        cfg.policy.tokenizer_max_length = 64
+    if 'bridge' in cfg.dataset.repo_id or 'simplified' in cfg.dataset.repo_id:
+        if 'pi0' == cfg.policy.type:
+            cfg.policy.tokenizer_max_length = 64
 
     logging.info("Creating dataset")
     dataset = make_dataset(cfg)
@@ -211,13 +212,6 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     else:
         shuffle = True
         sampler = None
-
-    # if len(sample_weights) > 0:
-    #     sampler = WeightedRandomSampler(
-    #         weights=sample_weights,
-    #         num_samples=len(dataset),
-    #         replacement=True,
-    #     )
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
