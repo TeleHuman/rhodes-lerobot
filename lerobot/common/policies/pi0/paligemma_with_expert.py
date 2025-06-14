@@ -184,6 +184,14 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         self.to_bfloat16_like_physical_intelligence()
         self.set_requires_grad()
 
+
+    def initialize_gemma_expert(self):
+        self.gemma_expert = GemmaForCausalLM(config=self.config.gemma_expert_config)
+        self.gemma_expert.model.embed_tokens = None
+
+        self.to_bfloat16_like_physical_intelligence()
+        self.set_requires_grad()
+
     def set_requires_grad(self):
         if self.config.freeze_vision_encoder:
             self.paligemma.vision_tower.eval()

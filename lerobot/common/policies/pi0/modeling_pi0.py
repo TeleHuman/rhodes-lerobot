@@ -578,7 +578,8 @@ class PI0Policy(PreTrainedPolicy):
             policy.config = config
             
             ### TODO: randomly initialize the expert gemma model and projector
-            policy.model.paligemma_with_expert.gemma_expert.model.init_weights()
+            # policy.model.paligemma_with_expert.gemma_expert.model.init_weights() 已弃用
+            # policy.model.paligemma_with_expert.initialize_gemma_expert()
             policy.model.state_proj = nn.Linear(config.max_state_dim, config.proj_width)
             policy.model.action_in_proj = nn.Linear(config.max_action_dim, config.proj_width)
             policy.model.action_out_proj = nn.Linear(config.proj_width, config.max_action_dim)
