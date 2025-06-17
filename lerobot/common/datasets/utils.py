@@ -34,6 +34,7 @@ from huggingface_hub import DatasetCard, DatasetCardData, HfApi
 from huggingface_hub.errors import RevisionNotFoundError
 from PIL import Image as PILImage
 from torchvision import transforms
+from torch.utils.data._utils.collate import default_collate
 
 from lerobot.common.datasets.backward_compatibility import (
     V21_MESSAGE,
@@ -817,3 +818,14 @@ def validate_episode_buffer(episode_buffer: dict, total_episodes: int, features:
             f"In episode_buffer not in features: {buffer_keys - set(features)}"
             f"In features not in episode_buffer: {set(features) - buffer_keys}"
         )
+
+
+### added by Yang Zhang
+def bridge_orig_filter_keys_collate_fn(batch):
+    # NOTE: 这是专门针对bridge data finetune 写的丢弃batch里面某些键值的操作
+    # 先用默认的 collate_fn 合并
+    batch = default_collate(batch)
+    key_to_abandon = ['observation.images.image_1', 'observation.images.image_2', 'observation.images.image_3']
+    for k in key_to_abandon:
+        batch.pop(k, None)
+    return batch

@@ -26,7 +26,7 @@ from torch.optim import Optimizer
 
 from lerobot.common.datasets.factory import make_dataset
 from lerobot.common.datasets.sampler import EpisodeAwareSampler
-from lerobot.common.datasets.utils import cycle
+from lerobot.common.datasets.utils import cycle, bridge_orig_filter_keys_collate_fn
 from lerobot.common.envs.factory import make_env
 from lerobot.common.optim.factory import make_optimizer_and_scheduler
 from lerobot.common.policies.factory import make_policy
@@ -175,6 +175,10 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     )
     policy.to(device)
 
+    # Print input_features and output_features
+    logging.info(f"Input features:\n {pformat(policy.config.input_features)}")
+    logging.info(f"Output features:\n {pformat(policy.config.output_features)}")
+
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
     grad_scaler = GradScaler(device.type, enabled=cfg.policy.use_amp)
@@ -221,6 +225,7 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
         sampler=sampler,
         pin_memory=device.type != "cpu",
         drop_last=False,
+        collate_fn=bridge_orig_filter_keys_collate_fn if 'bridge' in cfg.dataset.repo_id else None,
     )
     if accelerator:
         policy, optimizer, dataloader, lr_scheduler = accelerator.prepare(policy, optimizer, dataloader, lr_scheduler)

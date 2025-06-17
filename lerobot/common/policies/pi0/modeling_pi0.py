@@ -569,6 +569,7 @@ class PI0Policy(PreTrainedPolicy):
             train_expert_from_scratch = train_expert_from_scratch.lower() == 'true'
 
         if train_expert_from_scratch:
+            logging.info(f"Training expert from scratch with max_state_dim: {max_state_dim} and max_action_dim: {max_action_dim}")
             config.max_state_dim = int(max_state_dim)
             config.max_action_dim = int(max_action_dim)
 

@@ -31,8 +31,14 @@ from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.common.policies.tdmpc.configuration_tdmpc import TDMPCConfig
 from lerobot.common.policies.vqbet.configuration_vqbet import VQBeTConfig
 from lerobot.configs.policies import PreTrainedConfig
-from lerobot.configs.types import FeatureType
+from lerobot.configs.types import FeatureType, PolicyFeature
 
+### added by Yang Zhang
+VISUAL_INPUT_FEATS_PI0 = {
+    'observation.images.image_0': PolicyFeature(type=FeatureType.VISUAL, shape=None),
+    'observation.images.image_1': PolicyFeature(type=FeatureType.VISUAL, shape=None),
+    'observation.images.image_2': PolicyFeature(type=FeatureType.VISUAL, shape=None),
+}
 
 def get_policy_class(name: str) -> PreTrainedPolicy:
     """Get the policy's class and config class given a name (matching the policy class' `name` attribute)."""
@@ -158,7 +164,26 @@ def make_policy(
         )
     
     # 除了feature.type = FeatureType.ACTION的feature 都默认作为input
-    cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
+    if len(cfg.input_features) == 0:
+        logging.info(f"Adding input features to the policy config for policy type: {cfg.type}")
+        # 根据不同的policy类型进行特殊处理
+        match cfg.type:
+            case "pi0":
+                # Pi0 模型需要特殊处理input features
+                current_pi0_input_features = VISUAL_INPUT_FEATS_PI0
+                cfg.input_features = current_pi0_input_features
+                for key, ft in features.items():
+                    if key in current_pi0_input_features:
+                        cfg.input_features[key] = ft
+                    elif ft.type in [FeatureType.STATE, FeatureType.ENV]:
+                        cfg.input_features[key] = ft
+            case _:
+                # 默认情况下,除了action之外的所有feature都作为input
+                cfg.input_features = {
+                    key: ft for key, ft in features.items() 
+                    if key not in cfg.output_features
+                }
+
     kwargs["config"] = cfg
 
     if cfg.pretrained_path:
