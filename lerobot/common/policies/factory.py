@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import logging
-
+from pprint import pformat
 from torch import nn
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDatasetMetadata
@@ -183,6 +183,9 @@ def make_policy(
                     key: ft for key, ft in features.items() 
                     if key not in cfg.output_features
                 }
+    else:
+        logging.info(f"Input features already set for policy type `{cfg.type}`")
+        logging.info(f"Input features: {pformat(cfg.input_features)}")
 
     kwargs["config"] = cfg
 
