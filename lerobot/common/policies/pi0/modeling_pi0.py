@@ -276,9 +276,13 @@ class PI0Policy(PreTrainedPolicy):
         # )
 
         used_multi_lerobot_dataset = True
-        for k in dataset_stats.keys():
-            if 'observation' in k:
-                used_multi_lerobot_dataset = False
+
+        if dataset_stats is not None:
+            for k in dataset_stats.keys():
+                if 'observation' in k:
+                    used_multi_lerobot_dataset = False
+        else:
+            used_multi_lerobot_dataset = False
 
         if used_multi_lerobot_dataset:
             self.normalize_inputs = None
