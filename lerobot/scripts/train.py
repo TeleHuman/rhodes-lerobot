@@ -64,31 +64,44 @@ def update_policy(
     lr_scheduler=None,
     use_amp: bool = False,
     lock=None,
-    accelerator: Callable = None,
+    accelerator= None,
 ) -> tuple[MetricsTracker, dict]:
+    train_loss = 0.0
+
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
-    with torch.autocast(device_type=device.type) if use_amp and accelerator is None else nullcontext():
-        loss, output_dict = policy.forward(batch)
-        # TODO(rcadene): policy.unnormalize_outputs(out_dict)
 
     if accelerator:
-        accelerator.backward(loss)
-        accelerator.unscale_gradients(optimizer=optimizer)
-        if accelerator.is_main_process:
-            accelerator.wait_for_everyone()
-            import ipdb; ipdb.set_trace()
-        ## option 1
-        grad_norm = accelerator.clip_grad_norm_(policy.parameters(), grad_clip_norm, error_if_nonfinite=False)
-        ## option 2
-        grad_norm = torch.nn.utils.clip_grad_norm_(
-            policy.parameters(),
-            grad_clip_norm,
-            error_if_nonfinite=False,
-        )
-        optimizer.step()
+        # Gather the losses across all processes for logging (if we use distributed training).
+        # avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
+        # train_loss += avg_loss.item() / args.gradient_accumulation_steps
+
+
+        with accelerator.accumulate(policy):
+            loss, output_dict = policy.forward(batch)
+            # TODO(rcadene): policy.unnormalize_outputs(out_dict)
+
+            avg_loss = accelerator.gather(loss.unsqueeze(0)).mean()
+            train_loss += avg_loss.item() / accelerator.gradient_accumulation_steps
+            
+            # NOTE: the operation of unscaling gradients is done inside the backward method
+            accelerator.backward(loss)
+
+            ## clip gradients
+            if accelerator.sync_gradients:
+                trainable_params = list(filter(lambda p: p.requires_grad, policy.parameters()))
+                grad_norm = accelerator.clip_grad_norm_(trainable_params, grad_clip_norm)
+
+            optimizer.step()
+            optimizer.zero_grad()
+            if lr_scheduler is not None:
+                lr_scheduler.step()
+            
     else:
+        with torch.autocast(device_type=device.type) if use_amp and accelerator is None else nullcontext():
+            loss, output_dict = policy.forward(batch)
+            # TODO(rcadene): policy.unnormalize_outputs(out_dict)
         grad_scaler.scale(loss).backward()
         # Unscale the gradient of the optimizer's assigned params in-place **prior to gradient clipping**.
         grad_scaler.unscale_(optimizer)
@@ -105,12 +118,11 @@ def update_policy(
             grad_scaler.step(optimizer)
         # Updates the scale for next iteration.
         grad_scaler.update()
+        optimizer.zero_grad()
 
-    optimizer.zero_grad()
-
-    # Step through pytorch scheduler at every batch instead of epoch
-    if lr_scheduler is not None:
-        lr_scheduler.step()
+        # Step through pytorch scheduler at every batch instead of epoch
+        if lr_scheduler is not None:
+            lr_scheduler.step()
 
     if accelerator and has_method(accelerator.unwrap_model(policy, keep_fp32_wrapper=True), "update"):
         accelerator.unwrap_model(policy, keep_fp32_wrapper=True).update()
@@ -118,7 +130,7 @@ def update_policy(
         # To possibly update an internal buffer (for instance an Exponential Moving Average like in TDMPC).
         policy.update()
 
-    train_metrics.loss = loss.item()
+    train_metrics.loss = loss.item() if accelerator is None else train_loss
     train_metrics.grad_norm = grad_norm.item()
     train_metrics.lr = optimizer.param_groups[0]["lr"]
     train_metrics.update_s = time.perf_counter() - start_time
@@ -126,13 +138,30 @@ def update_policy(
 
 
 @parser.wrap()
-def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
+def train(cfg: TrainPipelineConfig):
     cfg.validate()
-    logging.info(pformat(cfg.to_dict()))
+    ### modified by Yang Zhang
+    # Initialize the accelerator if distributed training is specified
+    if is_launched_with_accelerate():
+        import accelerate
+        from accelerate.utils import ProjectConfiguration, DistributedDataParallelKwargs
+        accelerator_project_config = ProjectConfiguration(project_dir=cfg.output_dir, logging_dir=cfg.output_dir / cfg.accelerator_logging_dir)
+        accelerator = accelerate.Accelerator(
+            # mixed_precision will take the os.environ['ACCELERATE_MIXED_PRECISION'] as default value
+            # gradient_accumulation_steps will take the os.environ['ACCELERATE_GRADIENT_ACCUMULATION_STEPS'] as default value
+            kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)],
+            project_config=accelerator_project_config,
+            step_scheduler_with_optimizer=False
+        )
+    else:
+        accelerator = None
+        accelerator.clip_grad_norm_()
 
+    if not accelerator or accelerator.is_main_process:
+        logging.info(pformat(cfg.to_dict()))
 
     ##### TODO: (chenyou fan) I'm not sure this works as intended, are the metrics reported correct?
-    ##### We should probably integrate accelerate's WandBTracker inside our WandBLogger instead.
+    ##### Currently, we only log stats in the main process
     if accelerator and not accelerator.is_main_process:
         # Disable logging on non-main processes.
         cfg.wandb.enable = False
@@ -152,22 +181,26 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     torch.backends.cuda.matmul.allow_tf32 = True
     
     ### exceptional for Pi0 ###
+    ### WARNING: These manual modifications would be deprecated in the future
+    ### We would move these DIY configs into the `from_pretrained` method of the Pi0Policy
     if 'bridge' in cfg.dataset.repo_id or 'simplified' in cfg.dataset.repo_id:
         if 'pi0' == cfg.policy.type:
             cfg.policy.tokenizer_max_length = 64
 
-    logging.info("Creating dataset")
-    dataset = make_dataset(cfg)
+    logging.info("Creating dataset" if not accelerator else "[rank%d] Creating dataset" % accelerator.process_index)
+
+    with accelerator.main_process_first():
+        dataset = make_dataset(cfg)
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
     # using the eval.py instead, with gym_dora environment and dora-rs.
     eval_env = None
     if cfg.eval_freq > 0 and cfg.env is not None:
-        logging.info("Creating env")
+        logging.info("Creating env" if not accelerator else "[rank%d] Creating env" % accelerator.process_index)
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
 
-    logging.info("Creating policy")
+    logging.info("Creating policy" if not accelerator else "[rank%d] Creating policy" % accelerator.process_index)
     policy = make_policy(
         cfg=cfg.policy,
         ds_meta=dataset.meta,
@@ -182,7 +215,16 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
     step = 0  # number of policy updates (forward + backward + optim)
 
     if cfg.resume:
-        step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
+        if not accelerator:
+            step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
+        else:
+            ## TODO: debug
+            if accelerator.is_main_process:
+                import ipdb; ipdb.set_trace()
+            
+            accelerator.wait_for_everyone()
+            # every process loads state
+            accelerator.load_state(checkpoint_dir)
 
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     num_total_params = sum(p.numel() for p in policy.parameters())
@@ -274,14 +316,14 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
         )
         is_saving_step = (
             step % cfg.save_freq == 0 or step == cfg.steps
-            and (not accelerator or accelerator.is_main_process)
         )
         is_eval_step = (
             cfg.eval_freq > 0 and step % cfg.eval_freq == 0
             and (not accelerator or accelerator.is_main_process)
         )
 
-        if is_log_step:
+        ## add debug when step == 1
+        if is_log_step or (step == 1 and (not accelerator or accelerator.is_main_process)):
             logging.info(train_tracker)
             if wandb_logger:
                 wandb_log_dict = train_tracker.to_dict()
@@ -291,20 +333,24 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
             train_tracker.reset_averages()
 
         if cfg.save_checkpoint and is_saving_step:
+            checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
+            if not accelerator or accelerator.is_main_process:
+                logging.info(f"Checkpoint policy after step {step}")
+
             if accelerator:
                 accelerator.wait_for_everyone()
+                # NOTE: whenever using Accelerate (including the case of DeepSpeed), we should save state on each process
+                accelerator.save_state(checkpoint_dir)
+            else:
+                save_checkpoint(
+                    checkpoint_dir,
+                    step,
+                    cfg,
+                    policy,
+                    optimizer,
+                    lr_scheduler,
+                )
 
-            logging.info(f"Checkpoint policy after step {step}")
-            checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
-            #### TODO: (chenyou fan) 这里看下是不是能换成accelerator的save_state方法
-            save_checkpoint(
-                checkpoint_dir,
-                step,
-                cfg,
-                policy if not accelerator else accelerator.unwrap_model(policy),
-                optimizer,
-                lr_scheduler,
-            )
             update_last_checkpoint(checkpoint_dir)
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
@@ -354,12 +400,4 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
 
 if __name__ == "__main__":
     init_logging()
-    if is_launched_with_accelerate():
-        import accelerate
-
-        # We set step_scheduler_with_optimizer False to prevent accelerate from
-        # adjusting the lr_scheduler steps based on the num_processes
-        accelerator = accelerate.Accelerator(step_scheduler_with_optimizer=False)
-        train(accelerator=accelerator)
-    else:
-        train()
+    train()

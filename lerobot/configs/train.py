@@ -59,10 +59,18 @@ class TrainPipelineConfig(HubMixin):
     # Checkpoint is saved every `save_freq` training iterations and after the last training step.
     save_freq: int = 20_000
     use_policy_training_preset: bool = True
+    ## WARNING: the grad_clip_norm will be ignored if DEEPSPEED is used for distributed training
+    ## Therefore, you need to set the grad_clip_norm in the accelerate launch command
     optimizer: OptimizerConfig | None = None
     scheduler: LRSchedulerConfig | None = None
     eval: EvalConfig = field(default_factory=EvalConfig)
     wandb: WandBConfig = field(default_factory=WandBConfig)
+
+    ## updated features
+    # distributed training configs
+    gradient_accumulation_steps: int = 1
+    accelerator_logging_dir: str = "accelerate_logs"
+    
 
     def __post_init__(self):
         self.checkpoint_path = None
