@@ -18,7 +18,7 @@ OUTPUT_DIR="$MY_HOME/train_pi0/multi_gpu_test_1"
 
 ### accelerate launch arguments
 GPUS=1
-MIXED_PRECISION="no" # fp16 or bf16 or no
+MIXED_PRECISION="bf16" # fp16 or bf16 or no
 MAIN_PROCESS_PORT=29510
 GRADIENT_ACCUMULATION_STEPS=1
 GRADIENT_CLIPPING=10.0

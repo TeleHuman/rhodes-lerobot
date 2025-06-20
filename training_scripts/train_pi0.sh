@@ -19,11 +19,11 @@ TOTAL_STEPS=280000
 SAVE_FREQ=200
 
 
-python lerobot/scripts/train.py \
+CUDA_VISIBLE_DEVICES=1 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=True \
     --output_dir=$OUTPUT_DIR \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ \
-    --policy.max_state_dim=64 --policy.max_action_dim=64 --policy.train_expert_from_scratch=True
+    --policy.max_state_dim=64 --policy.max_action_dim=64 --policy.train_expert_from_scratch=False

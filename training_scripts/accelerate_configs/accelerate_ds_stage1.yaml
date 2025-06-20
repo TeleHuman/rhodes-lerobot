@@ -12,7 +12,7 @@ num_machines: 1
 # number of gpus per node
 num_processes: 1
 # mixed precision
-mixed_precision: 'no'
+mixed_precision: 'bf16'
 # rdzv backend
 rdzv_backend: static
 same_network: true

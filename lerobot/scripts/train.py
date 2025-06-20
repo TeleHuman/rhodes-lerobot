@@ -296,11 +296,12 @@ def train(cfg: TrainPipelineConfig):
         start_time = time.perf_counter()
         batch = next(dl_iter)
         train_tracker.dataloading_s = time.perf_counter() - start_time
+
         for key in batch:
-            if key in input_features and isinstance(batch[key], torch.Tensor) and batch[key].dtype == torch.float32:
+            if key in input_features and isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
             
-            if key in output_features and isinstance(batch[key], torch.Tensor) and batch[key].dtype == torch.float32:
+            if key in output_features and isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
 
         train_tracker, output_dict = update_policy(

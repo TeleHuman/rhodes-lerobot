@@ -684,9 +684,7 @@ class PI0FlowMatching(nn.Module):
             img_mask,
         ) in zip(images, img_masks, strict=False):
             img_emb = self.paligemma_with_expert.embed_image(img)
-            # 这是原来的
-            # img_emb = img_emb.to(dtype=torch.bfloat16)
-            img_emb = img_emb.to(dtype=img.dtype)
+            img_emb = img_emb.to(dtype=torch.bfloat16)
 
             # Normalize image embeddings
             img_emb_dim = img_emb.shape[-1]
@@ -729,9 +727,7 @@ class PI0FlowMatching(nn.Module):
 
         # Embed state
         state_emb = self.state_proj(state)
-        # 这是原来的
-        # state_emb = state_emb.to(dtype=torch.bfloat16)
-        state_emb = state_emb.to(dtype=state.dtype)
+        state_emb = state_emb.to(dtype=torch.bfloat16)
         embs.append(state_emb[:, None, :])
         bsize = state_emb.shape[0]
         dtype = state_emb.dtype
