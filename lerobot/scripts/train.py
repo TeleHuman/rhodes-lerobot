@@ -73,16 +73,11 @@ def update_policy(
     policy.train()
 
     if accelerator:
-        # Gather the losses across all processes for logging (if we use distributed training).
-        # avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
-        # train_loss += avg_loss.item() / args.gradient_accumulation_steps
-
-
         with accelerator.accumulate(policy):
             loss, output_dict = policy.forward(batch)
             # TODO(rcadene): policy.unnormalize_outputs(out_dict)
 
-            avg_loss = accelerator.gather(loss.unsqueeze(0)).mean()
+            avg_loss = accelerator.gather(loss.detach().clone().unsqueeze(0)).mean()
             train_loss += avg_loss.item() / accelerator.gradient_accumulation_steps
             
             # NOTE: the operation of unscaling gradients is done inside the backward method
@@ -131,7 +126,7 @@ def update_policy(
         policy.update()
 
     train_metrics.loss = loss.item() if accelerator is None else train_loss
-    train_metrics.grad_norm = grad_norm.item()
+    train_metrics.grad_norm = grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm
     train_metrics.lr = optimizer.param_groups[0]["lr"]
     train_metrics.update_s = time.perf_counter() - start_time
     return train_metrics, output_dict
@@ -142,6 +137,8 @@ def train(cfg: TrainPipelineConfig):
     cfg.validate()
     ### modified by Yang Zhang
     # Initialize the accelerator if distributed training is specified
+
+    weight_dtype = torch.float32
     if is_launched_with_accelerate():
         import accelerate
         from accelerate.utils import ProjectConfiguration, DistributedDataParallelKwargs
@@ -153,9 +150,15 @@ def train(cfg: TrainPipelineConfig):
             project_config=accelerator_project_config,
             step_scheduler_with_optimizer=False
         )
+        # acquire the mixed precision dtype
+        if accelerator.mixed_precision == "bf16":
+            weight_dtype = torch.bfloat16
+        elif accelerator.mixed_precision == "fp16":
+            weight_dtype = torch.float16
+        
+        cfg.mixed_precision = accelerator.mixed_precision
     else:
         accelerator = None
-        accelerator.clip_grad_norm_()
 
     if not accelerator or accelerator.is_main_process:
         logging.info(pformat(cfg.to_dict()))
@@ -189,8 +192,8 @@ def train(cfg: TrainPipelineConfig):
 
     logging.info("Creating dataset" if not accelerator else "[rank%d] Creating dataset" % accelerator.process_index)
 
-    with accelerator.main_process_first():
-        dataset = make_dataset(cfg)
+    # with accelerator.main_process_first():
+    dataset = make_dataset(cfg)
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
@@ -205,8 +208,11 @@ def train(cfg: TrainPipelineConfig):
         cfg=cfg.policy,
         ds_meta=dataset.meta,
         features=getattr(dataset, "intersection_features", None),
-    )
+    ).to(weight_dtype)
     policy.to(device)
+
+    input_features = policy.config.input_features
+    output_features = policy.config.output_features
 
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
@@ -286,13 +292,16 @@ def train(cfg: TrainPipelineConfig):
     if not accelerator or accelerator.is_main_process:
         logging.info("Start offline training on a fixed dataset")
     for _ in range(step, cfg.steps):
+        print(f"step: {_}")
         start_time = time.perf_counter()
         batch = next(dl_iter)
         train_tracker.dataloading_s = time.perf_counter() - start_time
-
         for key in batch:
-            if isinstance(batch[key], torch.Tensor):
-                batch[key] = batch[key].to(device, non_blocking=True)
+            if key in input_features and isinstance(batch[key], torch.Tensor) and batch[key].dtype == torch.float32:
+                batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
+            
+            if key in output_features and isinstance(batch[key], torch.Tensor) and batch[key].dtype == torch.float32:
+                batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
 
         train_tracker, output_dict = update_policy(
             train_tracker,
@@ -336,7 +345,8 @@ def train(cfg: TrainPipelineConfig):
             checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, cfg.steps, step)
             if not accelerator or accelerator.is_main_process:
                 logging.info(f"Checkpoint policy after step {step}")
-
+            
+            import ipdb; ipdb.set_trace()
             if accelerator:
                 accelerator.wait_for_everyone()
                 # NOTE: whenever using Accelerate (including the case of DeepSpeed), we should save state on each process

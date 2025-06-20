@@ -11,12 +11,12 @@ DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 # Output directory
-OUTPUT_DIR="outputs/train_pi0/test_robomind"
+OUTPUT_DIR="outputs/train_pi0/test_single_gpu"
 
 # Training Parameters
 BATCH_SIZE=8
 TOTAL_STEPS=280000
-SAVE_FREQ=20000
+SAVE_FREQ=200
 
 
 python lerobot/scripts/train.py \

@@ -14,24 +14,24 @@ DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 # Output directory
-OUTPUT_DIR="$MY_HOME/train_pi0/multi_gpu_test_1"
+OUTPUT_DIR="$MY_HOME/train_pi0/multi_gpu_test"
 
 ### accelerate launch arguments
-GPUS=1
-MIXED_PRECISION="no" # fp16 or bf16 or no
-MAIN_PROCESS_PORT=29510
+GPUS=2
+MIXED_PRECISION="bf16" # fp16 or bf16
+MAIN_PROCESS_PORT=29500
 GRADIENT_ACCUMULATION_STEPS=1
 GRADIENT_CLIPPING=10.0
 
 ### Lerobot Training Parameters
-BATCH_SIZE=8
+BATCH_SIZE=32
 TOTAL_STEPS=280000
-SAVE_FREQ=200
-LEARNING_RATE=0.0005
-
+SAVE_FREQ=1000
+LEARNING_RATE=5e-5
 
 ### accelerate launch command
-CUDA_VISIBLE_DEVICES=1 accelerate launch \
+accelerate launch \
+    --multi_gpu \
     --num_processes=$GPUS \
     --config_file=training_scripts/accelerate_configs/accelerate_ds_stage1.yaml \
     --main_process_port=$MAIN_PROCESS_PORT \
@@ -39,10 +39,6 @@ CUDA_VISIBLE_DEVICES=1 accelerate launch \
     --gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS \
     --gradient_clipping=$GRADIENT_CLIPPING \
     lerobot/scripts/train.py \
-    --dataset.repo_id=$DATASET_REPO_ID \
-    --dataset.root=$DATASET_ROOT \
-    --policy.path=$POLICY_PATH \
-    --policy.local_files_only=True \
-    --output_dir=$OUTPUT_DIR \
-    --optimizer.lr=$LEARNING_RATE \
+    --resume=true \
+    --config_path=$OUTPUT_DIR/checkpoints/last/pretrained_model \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ

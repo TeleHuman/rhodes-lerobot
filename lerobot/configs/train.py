@@ -70,6 +70,7 @@ class TrainPipelineConfig(HubMixin):
     # distributed training configs
     gradient_accumulation_steps: int = 1
     accelerator_logging_dir: str = "accelerate_logs"
+    mixed_precision: str = "no"
     
 
     def __post_init__(self):

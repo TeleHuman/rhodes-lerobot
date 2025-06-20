@@ -637,7 +637,8 @@ class PI0FlowMatching(nn.Module):
         )
         self.paligemma_with_expert = PaliGemmaWithExpertModel(paligemma_with_export_config)
 
-        # Projections are float32
+        # Projections are float32 or float16 or bfloat16
+        # It depends on whether to use the mixed precision training
         self.state_proj = nn.Linear(self.config.max_state_dim, self.config.proj_width)
         self.action_in_proj = nn.Linear(self.config.max_action_dim, self.config.proj_width)
         self.action_out_proj = nn.Linear(self.config.proj_width, self.config.max_action_dim)
@@ -651,20 +652,20 @@ class PI0FlowMatching(nn.Module):
         for params in self.state_proj.parameters():
             params.requires_grad = self.config.train_state_proj
 
-    def sample_noise(self, shape, device):
+    def sample_noise(self, shape, device, dtype):
         noise = torch.normal(
             mean=0.0,
             std=1.0,
             size=shape,
-            dtype=torch.float32,
+            dtype=dtype,
             device=device,
         )
         return noise
 
-    def sample_time(self, bsize, device):
+    def sample_time(self, bsize, device, dtype):
         time_beta = sample_beta(1.5, 1.0, bsize, device)
         time = time_beta * 0.999 + 0.001
-        return time.to(dtype=torch.float32, device=device)
+        return time.to(dtype=dtype, device=device)
 
     def embed_prefix(
         self, images, img_masks, lang_tokens, lang_masks
@@ -683,7 +684,9 @@ class PI0FlowMatching(nn.Module):
             img_mask,
         ) in zip(images, img_masks, strict=False):
             img_emb = self.paligemma_with_expert.embed_image(img)
-            img_emb = img_emb.to(dtype=torch.bfloat16)
+            # 这是原来的
+            # img_emb = img_emb.to(dtype=torch.bfloat16)
+            img_emb = img_emb.to(dtype=img.dtype)
 
             # Normalize image embeddings
             img_emb_dim = img_emb.shape[-1]
@@ -726,7 +729,9 @@ class PI0FlowMatching(nn.Module):
 
         # Embed state
         state_emb = self.state_proj(state)
-        state_emb = state_emb.to(dtype=torch.bfloat16)
+        # 这是原来的
+        # state_emb = state_emb.to(dtype=torch.bfloat16)
+        state_emb = state_emb.to(dtype=state.dtype)
         embs.append(state_emb[:, None, :])
         bsize = state_emb.shape[0]
         dtype = state_emb.dtype
@@ -776,10 +781,10 @@ class PI0FlowMatching(nn.Module):
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
-            noise = self.sample_noise(actions.shape, actions.device)
+            noise = self.sample_noise(actions.shape, actions.device, actions.dtype)
 
         if time is None:
-            time = self.sample_time(actions.shape[0], actions.device)
+            time = self.sample_time(actions.shape[0], actions.device, actions.dtype)
 
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
@@ -806,7 +811,7 @@ class PI0FlowMatching(nn.Module):
         )
         suffix_out = suffix_out[:, -self.config.n_action_steps :]
         # Original openpi code, upcast attention output
-        suffix_out = suffix_out.to(dtype=torch.float32)
+        suffix_out = suffix_out.to(dtype=actions.dtype)
         v_t = self.action_out_proj(suffix_out)
 
         losses = F.mse_loss(u_t, v_t, reduction="none")
@@ -816,10 +821,11 @@ class PI0FlowMatching(nn.Module):
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = state.shape[0]
         device = state.device
+        dtype = state.dtype
 
         if noise is None:
             actions_shape = (bsize, self.config.n_action_steps, self.config.max_action_dim)
-            noise = self.sample_noise(actions_shape, device)
+            noise = self.sample_noise(actions_shape, device, dtype)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
             images, img_masks, lang_tokens, lang_masks
@@ -838,10 +844,10 @@ class PI0FlowMatching(nn.Module):
         )
 
         dt = -1.0 / self.config.num_steps
-        dt = torch.tensor(dt, dtype=torch.float32, device=device)
+        dt = torch.tensor(dt, dtype=dtype, device=device)
 
         x_t = noise
-        time = torch.tensor(1.0, dtype=torch.float32, device=device)
+        time = torch.tensor(1.0, dtype=dtype, device=device)
         while time >= -dt / 2:
             expanded_time = time.expand(bsize)
             v_t = self.denoise_step(
@@ -890,6 +896,6 @@ class PI0FlowMatching(nn.Module):
         )
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self.config.n_action_steps :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
+        suffix_out = suffix_out.to(dtype=x_t.dtype)
         v_t = self.action_out_proj(suffix_out)
         return v_t
