@@ -213,7 +213,7 @@ class ImageTransformsConfig:
                 type="RandomResizedCrop",
                 kwargs={
                     "size": [224,224],
-                    "ratio": [1,1],
+                    "ratio": [1.0,1.0],
                     "scale": [0.95,0.95], # delin used [0.9, 0.95]
                 },
             ),
@@ -239,12 +239,18 @@ def make_transform_from_config(cfg: ImageTransformConfig):
 class ImageTransforms(Transform):
     """A class to compose image transforms based on configuration."""
 
-    def __init__(self, cfg: ImageTransformsConfig) -> None:
+    def __init__(self, cfg: ImageTransformsConfig, height, width) -> None:
         super().__init__()
         self._cfg = cfg
+        self.width = width
+        self.height = height
 
         self.weights = []
         self.transforms = {}
+
+        if 'crop_resize' in cfg.tfs:
+            cfg.tfs['crop_resize'].kwargs['size'] = [height, width]
+        
         for tf_name, tf_cfg in cfg.tfs.items():
             if tf_cfg.weight <= 0.0:
                 continue
@@ -262,6 +268,34 @@ class ImageTransforms(Transform):
                 n_subset=n_subset,
                 random_order=cfg.random_order,
             )
+
+    @classmethod
+    def create_piohfive_sequential_transform(cls, img_size: tuple[int, int]) -> v2.Compose:
+        """按照固定顺序创建图像增强转换。
+
+        Args:
+            img_size: 目标图像大小 (height, width)
+            p: 每个变换的概率
+
+        Returns:
+            按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
+        """
+        return v2.Compose([
+            v2.RandomResizedCrop(
+                size=img_size,
+                ratio=[1.0,1.0],
+                scale=[0.95,0.95],
+            ),
+            v2.RandomRotation(
+                degrees=(-5, 5),
+            ),
+            v2.ColorJitter(
+                brightness=(0.8, 1.2),
+                contrast=(0.8, 1.2),
+                saturation=(0.5, 1.5),
+                hue=(-0.05, 0.05),
+            )
+        ])
 
     def forward(self, *inputs: Any) -> Any:
         return self.tf(*inputs)

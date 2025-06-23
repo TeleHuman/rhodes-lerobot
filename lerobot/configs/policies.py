@@ -91,11 +91,11 @@ class PreTrainedConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_optimizer_preset(self) -> OptimizerConfig:
+    def get_optimizer_preset(self, **kwargs) -> OptimizerConfig:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_scheduler_preset(self) -> LRSchedulerConfig | None:
+    def get_scheduler_preset(self, **kwargs) -> LRSchedulerConfig | None:
         raise NotImplementedError
 
     @abc.abstractmethod

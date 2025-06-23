@@ -71,6 +71,7 @@ class TrainPipelineConfig(HubMixin):
     gradient_accumulation_steps: int = 1
     accelerator_logging_dir: str = "accelerate_logs"
     mixed_precision: str = "no"
+    policy_optimizer_lr: float = 5e-5
     
 
     def __post_init__(self):
@@ -82,19 +83,26 @@ class TrainPipelineConfig(HubMixin):
         if policy_path:
             # Only load the policy config
             cli_overrides = parser.get_cli_overrides("policy")
-            
             # Extract and remove local_files_only from cli_overrides
             local_files_only = False
+            chunk_size = None
+            n_action_steps = None
             clean_cli_overrides = []
             
             for override in cli_overrides:
                 if override.startswith('--local_files_only='):
                     local_files_only = override.split('=')[1].lower() == 'true'
+                elif override.startswith('--chunk_size='):
+                    chunk_size = int(override.split('=')[1])
+                elif override.startswith('--n_action_steps='):
+                    n_action_steps = int(override.split('=')[1])
                 else:
                     clean_cli_overrides.append(override)
 
             self.policy = PreTrainedConfig.from_pretrained(policy_path, local_files_only=local_files_only, cli_overrides=[])
             self.policy.pretrained_path = policy_path
+            self.policy.chunk_size = chunk_size
+            self.policy.n_action_steps = n_action_steps
             ### modified by Yang Zhang
             self.policy.cli_overrides = clean_cli_overrides
         elif self.resume:
@@ -136,8 +144,8 @@ class TrainPipelineConfig(HubMixin):
         if not self.use_policy_training_preset and (self.optimizer is None or self.scheduler is None):
             raise ValueError("Optimizer and Scheduler must be set when the policy presets are not used.")
         elif self.use_policy_training_preset and not self.resume:
-            self.optimizer = self.policy.get_optimizer_preset()
-            self.scheduler = self.policy.get_scheduler_preset()
+            self.optimizer = self.policy.get_optimizer_preset(lr=self.policy_optimizer_lr)
+            self.scheduler = self.policy.get_scheduler_preset(lr=self.policy_optimizer_lr, total_steps=self.steps)
 
     @classmethod
     def __get_path_fields__(cls) -> list[str]:

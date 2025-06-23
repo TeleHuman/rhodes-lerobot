@@ -86,9 +86,9 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
     Returns:
         LeRobotDataset | MultiLeRobotDataset
     """
-    image_transforms = (
-        ImageTransforms(cfg.dataset.image_transforms) if cfg.dataset.image_transforms.enable else None
-    )
+    # image_transforms = (
+    #     ImageTransforms(cfg.dataset.image_transforms) if cfg.dataset.image_transforms.enable else None
+    # )
     
     if cfg.dataset.repo_id.startswith("["):
         cfg.dataset.repo_id = eval(cfg.dataset.repo_id)
@@ -97,6 +97,11 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         ds_meta = LeRobotDatasetMetadata(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
         )
+ 
+        image_transforms = ImageTransforms.create_piohfive_sequential_transform(
+            ds_meta.features['observation.images.image_0']['shape'][:2]
+        ) if cfg.dataset.image_transforms.enable else None
+
         delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
         dataset = LeRobotDataset(
             cfg.dataset.repo_id,
