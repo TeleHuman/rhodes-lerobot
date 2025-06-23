@@ -257,10 +257,6 @@ def train(cfg: TrainPipelineConfig):
                 model.load_state_dict(load_model.state_dict())
                 del load_model
 
-            step = load_training_step(input_dir)
-            if accelerator.is_main_process:
-                logging.info(f"Load json from {os.path.join(input_dir, 'training_step.json')}. Get global step = {step}.")
-
         accelerator.register_save_state_pre_hook(save_model_hook)
         accelerator.register_load_state_pre_hook(load_model_hook)
 
@@ -321,6 +317,9 @@ def train(cfg: TrainPipelineConfig):
 
     if cfg.resume and accelerator:
         accelerator.load_state(cfg.checkpoint_path)
+        step = load_training_step(cfg.checkpoint_path)
+        if accelerator.is_main_process:
+            logging.info(f"Load json from {cfg.checkpoint_path / 'training_step.json'}. Get global step = {step}.")
 
     dl_iter = cycle(dataloader)
 
