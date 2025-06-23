@@ -208,7 +208,10 @@ def train(cfg: TrainPipelineConfig):
         cfg=cfg.policy,
         ds_meta=dataset.meta,
         features=getattr(dataset, "intersection_features", None),
-    ).to(weight_dtype)
+    )
+    if accelerator:
+        policy = policy.to(weight_dtype)
+
     policy.to(device)
 
     input_features = policy.config.input_features
@@ -297,12 +300,17 @@ def train(cfg: TrainPipelineConfig):
         batch = next(dl_iter)
         train_tracker.dataloading_s = time.perf_counter() - start_time
 
-        for key in batch:
-            if key in input_features and isinstance(batch[key], torch.Tensor):
-                batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
-            
-            if key in output_features and isinstance(batch[key], torch.Tensor):
-                batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
+        if not accelerator:
+            for key in batch:
+                if isinstance(batch[key], torch.Tensor):
+                    batch[key] = batch[key].to(device)
+        else:
+            for key in batch:
+                if key in input_features and isinstance(batch[key], torch.Tensor):
+                    batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
+                
+                if key in output_features and isinstance(batch[key], torch.Tensor):
+                    batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
 
         train_tracker, output_dict = update_policy(
             train_tracker,
