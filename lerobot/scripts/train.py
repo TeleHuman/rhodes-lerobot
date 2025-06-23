@@ -15,6 +15,7 @@
 # limitations under the License.
 import logging
 import time
+import os
 from contextlib import nullcontext
 from pprint import pformat
 from typing import Any, Callable
@@ -40,6 +41,8 @@ from lerobot.common.utils.train_utils import (
     load_training_state,
     save_checkpoint,
     update_last_checkpoint,
+    save_training_step,
+    load_training_step,
 )
 from lerobot.common.utils.utils import (
     format_big_number,
@@ -47,6 +50,10 @@ from lerobot.common.utils.utils import (
     has_method,
     init_logging,
     is_launched_with_accelerate,
+)
+from lerobot.common.constants import (
+    PRETRAINED_MODEL_DIR,
+    TRAINING_STATE_DIR,
 )
 from lerobot.common.utils.wandb_utils import WandBLogger
 from lerobot.configs import parser
@@ -214,6 +221,49 @@ def train(cfg: TrainPipelineConfig):
 
     policy.to(device)
 
+    # define save_model hook
+    if accelerator:
+        def save_model_hook(models, weights, output_dir):
+            if accelerator.is_main_process:
+                for model in models:
+                    ### option 1
+                    # if isinstance(unwrap_model(accelerator, model), type(unwrap_model(accelerator, transformer))):
+                    #     model: CogVideoXTransformer3DModel
+                    #     model = unwrap_model(accelerator, model)
+                    #     model.save_pretrained(
+                    #         os.path.join(output_dir, "transformer"), safe_serialization=True, max_shard_size="5GB"
+                    #     )
+                    # else:
+                    #     raise ValueError(f"Unexpected save model: {model.__class__}")
+                
+                    ### option 2
+                    model.save_pretrained(os.path.join(output_dir, PRETRAINED_MODEL_DIR))
+                    cfg.save_pretrained(os.path.join(output_dir, PRETRAINED_MODEL_DIR))
+                    save_training_step(step, checkpoint_dir)
+                    
+                    # make sure to pop weight so that corresponding model is not saved again
+                    if accelerator.distributed_type != "DEEPSPEED":
+                        weights.pop()
+
+        def load_model_hook(models, input_dir):
+            for i in range(len(models)):
+                # pop models so that they are not loaded again
+                model = models.pop()
+
+                load_model = model.__class__.from_pretrained(
+                    os.path.join(input_dir, PRETRAINED_MODEL_DIR),
+                )
+
+                model.load_state_dict(load_model.state_dict())
+                del load_model
+
+            step = load_training_step(input_dir)
+            if accelerator.is_main_process:
+                logging.info(f"Load json from {os.path.join(input_dir, 'training_step.json')}. Get global step = {step}.")
+
+        accelerator.register_save_state_pre_hook(save_model_hook)
+        accelerator.register_load_state_pre_hook(load_model_hook)
+
     input_features = policy.config.input_features
     output_features = policy.config.output_features
 
@@ -223,17 +273,10 @@ def train(cfg: TrainPipelineConfig):
 
     step = 0  # number of policy updates (forward + backward + optim)
 
-    if cfg.resume:
-        if not accelerator:
-            step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
-        else:
-            ## TODO: debug
-            if accelerator.is_main_process:
-                import ipdb; ipdb.set_trace()
-            
-            accelerator.wait_for_everyone()
-            # every process loads state
-            accelerator.load_state(checkpoint_dir)
+    if cfg.resume and not accelerator:
+        # 根据原生逻辑，在这里会调用resume载入训练所需的stuff
+        # NOTE: 这里只适用于单卡训练，非分布式训练
+        step, optimizer, lr_scheduler = load_training_state(cfg.checkpoint_path, optimizer, lr_scheduler)
 
     num_learnable_params = sum(p.numel() for p in policy.parameters() if p.requires_grad)
     num_total_params = sum(p.numel() for p in policy.parameters())
@@ -275,6 +318,9 @@ def train(cfg: TrainPipelineConfig):
     )
     if accelerator:
         policy, optimizer, dataloader, lr_scheduler = accelerator.prepare(policy, optimizer, dataloader, lr_scheduler)
+
+    if cfg.resume and accelerator:
+        accelerator.load_state(cfg.checkpoint_path)
 
     dl_iter = cycle(dataloader)
 
@@ -355,7 +401,6 @@ def train(cfg: TrainPipelineConfig):
             if not accelerator or accelerator.is_main_process:
                 logging.info(f"Checkpoint policy after step {step}")
             
-            import ipdb; ipdb.set_trace()
             if accelerator:
                 accelerator.wait_for_everyone()
                 # NOTE: whenever using Accelerate (including the case of DeepSpeed), we should save state on each process

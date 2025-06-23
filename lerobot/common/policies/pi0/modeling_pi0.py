@@ -60,6 +60,8 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers import AutoTokenizer
 
+from lerobot.configs.policies import PreTrainedConfig
+
 from lerobot.common.constants import ACTION, OBS_ROBOT
 from lerobot.common.policies.normalize import Normalize, Unnormalize, MultiDatasetNormalize, MultiDatasetUnnormalize
 from lerobot.common.policies.pi0.configuration_pi0 import PI0Config
@@ -533,7 +535,7 @@ class PI0Policy(PreTrainedPolicy):
         from huggingface_hub.errors import HfHubHTTPError
 
         if config is None:
-            config = PI0Config.from_pretrained(
+            config = PreTrainedConfig.from_pretrained(
                 pretrained_name_or_path=pretrained_name_or_path,
                 force_download=force_download,
                 resume_download=resume_download,

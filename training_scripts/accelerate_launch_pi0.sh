@@ -14,7 +14,7 @@ DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 # Output directory
-OUTPUT_DIR="$MY_HOME/train_pi0/multi_gpu_test_1"
+OUTPUT_DIR="outputs/train_pi0/multi_gpu_test_2"
 
 ### accelerate launch arguments
 GPUS=1
@@ -31,7 +31,7 @@ LEARNING_RATE=0.0005
 
 
 ### accelerate launch command
-CUDA_VISIBLE_DEVICES=1 accelerate launch \
+CUDA_VISIBLE_DEVICES=0 accelerate launch \
     --num_processes=$GPUS \
     --config_file=training_scripts/accelerate_configs/accelerate_ds_stage1.yaml \
     --main_process_port=$MAIN_PROCESS_PORT \
