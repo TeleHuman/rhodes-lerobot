@@ -1,29 +1,23 @@
 #!/bin/zsh
-# preparation on os.environ
-# export GLOO_SOCKET_IFNAME=eth0
-# # 启用 NCCL debug 日志
-# export NCCL_DEBUG=INFO
-# export NCCL_DEBUG_SUBSYS=ALL
 
 # Dataset configuration
-# DATASET_REPO_ID="IPEC-COMMUNITY/bridge_orig_lerobot"
-DATASET_REPO_ID="RoboMind/tienkung_gello_1rgb_normkey"
+DATASET_REPO_ID="RoboTwin/all_tasks_50ep"
 DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 
 # Pretrained model configuration  
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 ### accelerate launch arguments
-GPUS=1
+GPUS=4
 MAIN_PROCESS_PORT=29500
 MIXED_PRECISION="bf16"
 GRADIENT_ACCUMULATION_STEPS=1
 GRADIENT_CLIPPING=10.0
 
 ### Lerobot Training Parameters
-BATCH_SIZE=8
-TOTAL_STEPS=280000
-SAVE_FREQ=200
+BATCH_SIZE=12
+TOTAL_STEPS=1600000
+SAVE_FREQ=4000
 LEARNING_RATE=0.00005
 ACTION_CHUNK_SIZE=4
 NUM_WORKERS=8
@@ -45,7 +39,7 @@ LR="lr${LR_SCI}"
 CHUNK_SIZE="ck${ACTION_CHUNK_SIZE}"
 SEED_STR="seed${SEED}"
 
-OUTPUT_DIR="$MY_HOME/train_pi0/${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
+OUTPUT_DIR="$MY_HOME/train_pi0/robotwin_${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
 echo "Output dir: $OUTPUT_DIR"
 # ------------------------------------------------------------
 

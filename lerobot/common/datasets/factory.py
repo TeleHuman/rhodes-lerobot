@@ -97,9 +97,16 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         ds_meta = LeRobotDatasetMetadata(
             cfg.dataset.repo_id, root=cfg.dataset.root, revision=cfg.dataset.revision
         )
- 
+        # 获取observation.images开头的第一个key
+        image_key = next(
+            (key for key in ds_meta.features.keys() if key.startswith("observation.images.")),
+            None
+        )
+        if image_key is None:
+            raise ValueError("No image key found in the dataset")
+        
         image_transforms = ImageTransforms.create_piohfive_sequential_transform(
-            ds_meta.features['observation.images.image_0']['shape'][:2]
+            ds_meta.features[image_key]['shape'][1:]
         ) if cfg.dataset.image_transforms.enable else None
 
         delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)

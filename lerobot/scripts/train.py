@@ -340,7 +340,7 @@ def train(cfg: TrainPipelineConfig):
     if not accelerator or accelerator.is_main_process:
         logging.info("Start offline training on a fixed dataset")
     for _ in range(step, cfg.steps):
-        print(f"step: {_}")
+        # print(f"step: {_}")
         start_time = time.perf_counter()
         batch = next(dl_iter)
         train_tracker.dataloading_s = time.perf_counter() - start_time
@@ -413,8 +413,10 @@ def train(cfg: TrainPipelineConfig):
                     optimizer,
                     lr_scheduler,
                 )
-
-            update_last_checkpoint(checkpoint_dir)
+            
+            if not accelerator or accelerator.is_main_process:
+                update_last_checkpoint(checkpoint_dir)
+                
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
 
