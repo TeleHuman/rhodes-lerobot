@@ -17,13 +17,16 @@ OUTPUT_DIR="outputs/train_pi0/test_single_gpu"
 BATCH_SIZE=8
 TOTAL_STEPS=280000
 SAVE_FREQ=200
+ACTION_CHUNK_SIZE=4
+NUM_WORKERS=4
 
-
-CUDA_VISIBLE_DEVICES=0 python lerobot/scripts/train.py \
+CUDA_VISIBLE_DEVICES=1 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
+    --dataset.image_transforms.enable=true \
     --policy.path=$POLICY_PATH \
-    --policy.local_files_only=True \
+    --policy.local_files_only=true \
     --output_dir=$OUTPUT_DIR \
-    --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ \
-    --policy.max_state_dim=64 --policy.max_action_dim=64 --policy.train_expert_from_scratch=False
+    --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ --num_workers=$NUM_WORKERS \
+    --policy.max_state_dim=64 --policy.max_action_dim=64 --policy.train_expert_from_scratch=False \
+    --policy.chunk_size=$ACTION_CHUNK_SIZE --policy.n_action_steps=$ACTION_CHUNK_SIZE

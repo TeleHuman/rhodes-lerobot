@@ -8,19 +8,19 @@ DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 ### accelerate launch arguments
-GPUS=4
+GPUS=1
 MAIN_PROCESS_PORT=29500
 MIXED_PRECISION="bf16"
 GRADIENT_ACCUMULATION_STEPS=1
 GRADIENT_CLIPPING=10.0
 
 ### Lerobot Training Parameters
-BATCH_SIZE=12
+BATCH_SIZE=8
 TOTAL_STEPS=1600000
-SAVE_FREQ=4000
+SAVE_FREQ=600
 LEARNING_RATE=0.00005
 ACTION_CHUNK_SIZE=4
-NUM_WORKERS=8
+NUM_WORKERS=4
 SEED=42
 
 # ------------------------------------------------------------
@@ -39,12 +39,12 @@ LR="lr${LR_SCI}"
 CHUNK_SIZE="ck${ACTION_CHUNK_SIZE}"
 SEED_STR="seed${SEED}"
 
-OUTPUT_DIR="$MY_HOME/train_pi0/robotwin_${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
+OUTPUT_DIR="outputs/train_pi0/robotwin_${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
 echo "Output dir: $OUTPUT_DIR"
 # ------------------------------------------------------------
 
 ### accelerate launch command
-accelerate launch \
+CUDA_VISIBLE_DEVICES=1 accelerate launch \
     --num_processes=$GPUS \
     --config_file=training_scripts/accelerate_configs/accelerate_ds_stage1.yaml \
     --main_process_port=$MAIN_PROCESS_PORT \

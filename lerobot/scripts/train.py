@@ -305,11 +305,11 @@ def train(cfg: TrainPipelineConfig):
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        num_workers=0, # cfg.num_workers,
+        num_workers=cfg.num_workers,
         batch_size=cfg.batch_size,
         shuffle=shuffle,
         sampler=sampler,
-        pin_memory=False, # device.type != "cpu",
+        pin_memory=device.type != "cpu",
         drop_last=False,
     )
     if accelerator:
@@ -401,6 +401,7 @@ def train(cfg: TrainPipelineConfig):
                 logging.info(f"Checkpoint policy after step {step}")
             
             if accelerator:
+                import ipdb; ipdb.set_trace()
                 accelerator.wait_for_everyone()
                 # NOTE: whenever using Accelerate (including the case of DeepSpeed), we should save state on each process
                 accelerator.save_state(checkpoint_dir)
