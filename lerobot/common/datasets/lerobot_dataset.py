@@ -625,8 +625,11 @@ class LeRobotDataset(torch.utils.data.Dataset):
     def load_hf_dataset(self) -> datasets.Dataset:
         """hf_dataset contains all the observations, states, actions, rewards, etc."""
         if self.episodes is None:
-            path = str(self.root / "data")
-            hf_dataset = load_dataset("parquet", data_dir=path, split="train")
+            # path = str(self.root / "data")
+            # hf_dataset = load_dataset("parquet", data_dir=path, split="train")
+
+            fpaths = [str(self.root / self.meta.get_data_file_path(ep_idx)) for ep_idx in self.meta.episodes]
+            hf_dataset = load_dataset("parquet", data_files=fpaths, split="train")
         else:
             files = [str(self.root / self.meta.get_data_file_path(ep_idx)) for ep_idx in self.episodes]
             hf_dataset = load_dataset("parquet", data_files=files, split="train")

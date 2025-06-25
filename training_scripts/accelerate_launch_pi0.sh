@@ -1,26 +1,26 @@
 #!/bin/zsh
 
 # Dataset configuration
-DATASET_REPO_ID="RoboTwin/all_tasks_50ep"
+DATASET_REPO_ID="IPEC-COMMUNITY/bridge_orig_lerobot_oneview"
 DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 
 # Pretrained model configuration  
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 ### accelerate launch arguments
-GPUS=4
+GPUS=8
 MAIN_PROCESS_PORT=29500
 MIXED_PRECISION="bf16"
 GRADIENT_ACCUMULATION_STEPS=1
 GRADIENT_CLIPPING=10.0
 
 ### Lerobot Training Parameters
-BATCH_SIZE=12
+BATCH_SIZE=32
 TOTAL_STEPS=1600000
 SAVE_FREQ=5000
 LEARNING_RATE=0.00005
 ACTION_CHUNK_SIZE=50
-NUM_WORKERS=6
+NUM_WORKERS=40
 SEED=42
 
 # ------------------------------------------------------------
