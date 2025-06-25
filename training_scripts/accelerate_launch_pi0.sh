@@ -39,7 +39,7 @@ LR="lr${LR_SCI}"
 CHUNK_SIZE="ck${ACTION_CHUNK_SIZE}"
 SEED_STR="seed${SEED}"
 
-OUTPUT_DIR="$MY_HOME/train_pi0/robotwin_${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
+OUTPUT_DIR="$MY_HOME/train_pi0/${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
 echo "Output dir: $OUTPUT_DIR"
 # ------------------------------------------------------------
 
