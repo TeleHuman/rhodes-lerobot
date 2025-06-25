@@ -21,7 +21,7 @@ SAVE_FREQ=200
 ACTION_CHUNK_SIZE=50
 NUM_WORKERS=4
 
-CUDA_VISIBLE_DEVICES=1 python lerobot/scripts/train.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --dataset.image_transforms.enable=true \

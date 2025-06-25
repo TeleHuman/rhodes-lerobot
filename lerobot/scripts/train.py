@@ -187,7 +187,8 @@ def train(cfg: TrainPipelineConfig):
 
     # Check device is available
     device = get_safe_torch_device(cfg.policy.device, log=True, accelerator=accelerator)
-    cfg.policy.device = device
+    if accelerator:
+        cfg.policy.device = f'cuda:{accelerator.process_index}'
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     
