@@ -55,6 +55,7 @@ accelerate launch \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --dataset.image_transforms.enable=true \
+    --dataset.wrist_transforms.enable=true \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=true \
     --policy_optimizer_lr=$LEARNING_RATE \
