@@ -363,6 +363,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         root: str | Path | None = None,
         episodes: list[int] | None = None,
         image_transforms: Callable | None = None,
+        wrist_transforms: Callable | None = None,
         delta_timestamps: dict[list[float]] | None = None,
         tolerance_s: float = 1e-4,
         revision: str | None = None,
@@ -475,6 +476,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.repo_id = repo_id
         self.root = Path(root) if root else HF_LEROBOT_HOME / repo_id
         self.image_transforms = image_transforms
+        self.wrist_transforms = wrist_transforms
+
         self.delta_timestamps = delta_timestamps
         self.episodes = episodes
         self.tolerance_s = tolerance_s
@@ -748,7 +751,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if self.image_transforms is not None:
             image_keys = self.meta.camera_keys
             for cam in image_keys:
-                item[cam] = self.image_transforms(item[cam])
+                if 'wrist' in cam or 'image_1' in cam or 'image_2' in cam:
+                    item[cam] = self.wrist_transforms(item[cam])
+                else:
+                    item[cam] = self.image_transforms(item[cam])
 
         # Add task as a string
         task_idx = item["task_index"].item()

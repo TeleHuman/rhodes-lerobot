@@ -220,6 +220,53 @@ class ImageTransformsConfig:
         }
     )
 
+@dataclass
+class WristTransformsConfig:
+    """
+    These transforms are all using standard torchvision.transforms.v2
+    You can find out how these transformations affect images here:
+    https://pytorch.org/vision/0.18/auto_examples/transforms/plot_transforms_illustrations.html
+    We use a custom RandomSubsetApply container to sample them.
+    """
+
+    # Set this flag to `true` to enable transforms during training
+    enable: bool = False
+    # This is the maximum number of transforms (sampled from these below) that will be applied to each frame.
+    # It's an integer in the interval [1, number_of_available_transforms].
+    max_num_transforms: int = 3
+    # By default, transforms are applied in Torchvision's suggested order (shown below).
+    # Set this to True to apply them in a random order.
+    random_order: bool = False
+    tfs: dict[str, ImageTransformConfig] = field(
+        default_factory=lambda: {
+            "brightness": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"brightness": (0.8, 1.2)},
+            ),
+            "contrast": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"contrast": (0.8, 1.2)},
+            ),
+            "saturation": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"saturation": (0.5, 1.5)},
+            ),
+            "hue": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"hue": (-0.05, 0.05)},
+            ),
+            "sharpness": ImageTransformConfig(
+                weight=1.0,
+                type="SharpnessJitter",
+                kwargs={"sharpness": (0.5, 1.5)},
+            ),
+        }
+    )
+
 
 def make_transform_from_config(cfg: ImageTransformConfig):
     if cfg.type == "Identity":
@@ -248,7 +295,7 @@ class ImageTransforms(Transform):
         self.weights = []
         self.transforms = {}
 
-        if 'crop_resize' in cfg.tfs:
+        if 'crop_resize' in cfg.tfs.keys():
             cfg.tfs['crop_resize'].kwargs['size'] = [height, width]
         
         for tf_name, tf_cfg in cfg.tfs.items():

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from lerobot.common import (
     policies,  # noqa: F401
 )
-from lerobot.common.datasets.transforms import ImageTransformsConfig
+from lerobot.common.datasets.transforms import ImageTransformsConfig, WristTransformsConfig
 from lerobot.common.datasets.video_utils import get_safe_default_codec
 
 
@@ -34,6 +34,7 @@ class DatasetConfig:
     root: str | None = None
     episodes: list[int] | None = None
     image_transforms: ImageTransformsConfig = field(default_factory=ImageTransformsConfig)
+    wrist_transforms: WristTransformsConfig = field(default_factory=WristTransformsConfig)
     revision: str | None = None
     use_imagenet_stats: bool = True
     video_backend: str = field(default_factory=get_safe_default_codec)

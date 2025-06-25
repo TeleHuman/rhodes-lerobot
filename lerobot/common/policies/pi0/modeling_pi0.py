@@ -523,8 +523,6 @@ class PI0Policy(PreTrainedPolicy):
         train_expert_from_scratch: bool | str = False,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
-        chunk_size: int = 4,
-        n_action_steps: int = 4,
         **kwargs,
     ):
         """
@@ -549,8 +547,6 @@ class PI0Policy(PreTrainedPolicy):
                 **kwargs,
             )
         model_id = str(pretrained_name_or_path)
-        config.chunk_size = chunk_size
-        config.n_action_steps = n_action_steps
         instance = cls(config, **kwargs)
         if os.path.isdir(model_id):
             print("Loading weights from local directory")

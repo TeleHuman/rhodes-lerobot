@@ -187,6 +187,7 @@ def train(cfg: TrainPipelineConfig):
 
     # Check device is available
     device = get_safe_torch_device(cfg.policy.device, log=True, accelerator=accelerator)
+    cfg.policy.device = device
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     
@@ -218,8 +219,12 @@ def train(cfg: TrainPipelineConfig):
     )
     if accelerator:
         policy = policy.to(weight_dtype)
+    else:
+        policy.to(device)
 
-    policy.to(device)
+    if not accelerator or accelerator.is_main_process:
+        logging.info(f"policy.config.input_features: {pformat(policy.config.input_features)}")
+        logging.info(f"policy.config.output_features: {pformat(policy.config.output_features)}")
 
     # define save_model hook
     if accelerator:
@@ -352,10 +357,10 @@ def train(cfg: TrainPipelineConfig):
         else:
             for key in batch:
                 if key in input_features and isinstance(batch[key], torch.Tensor):
-                    batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
+                    batch[key] = batch[key].to(dtype=weight_dtype, non_blocking=True)
                 
                 if key in output_features and isinstance(batch[key], torch.Tensor):
-                    batch[key] = batch[key].to(device, dtype=weight_dtype, non_blocking=True)
+                    batch[key] = batch[key].to(dtype=weight_dtype, non_blocking=True)
 
         train_tracker, output_dict = update_policy(
             train_tracker,
@@ -401,7 +406,6 @@ def train(cfg: TrainPipelineConfig):
                 logging.info(f"Checkpoint policy after step {step}")
             
             if accelerator:
-                import ipdb; ipdb.set_trace()
                 accelerator.wait_for_everyone()
                 # NOTE: whenever using Accelerate (including the case of DeepSpeed), we should save state on each process
                 accelerator.save_state(checkpoint_dir)

@@ -105,9 +105,26 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         if image_key is None:
             raise ValueError("No image key found in the dataset")
         
+        # 获取图像维度名称列表
+        image_dim_names = ds_meta.features[image_key]['names']
+        
+        # 找到height和width在names中的索引位置
+        height_idx = image_dim_names.index('height') if 'height' in image_dim_names else None
+        width_idx = image_dim_names.index('width') if 'width' in image_dim_names else None
+        
+        if height_idx is None or width_idx is None:
+            raise ValueError("Could not find 'height' or 'width' in image dimension names")
+            
+        # 根据索引从shape中获取实际的高度和宽度值
+        image_shape = ds_meta.features[image_key]['shape']
+        height = image_shape[height_idx]
+        width = image_shape[width_idx]
+
         image_transforms = ImageTransforms.create_piohfive_sequential_transform(
-            ds_meta.features[image_key]['shape'][1:]
+            (height, width)
         ) if cfg.dataset.image_transforms.enable else None
+
+        wrist_transforms = ImageTransforms(cfg.dataset.wrist_transforms, height=None, width=None) if cfg.dataset.wrist_transforms.enable else None
 
         delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
         dataset = LeRobotDataset(
@@ -116,6 +133,7 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             episodes=cfg.dataset.episodes,
             delta_timestamps=delta_timestamps,
             image_transforms=image_transforms,
+            wrist_transforms=wrist_transforms,
             revision=cfg.dataset.revision,
             video_backend=cfg.dataset.video_backend,
         )
