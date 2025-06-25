@@ -52,6 +52,7 @@ from lerobot.common.utils.wandb_utils import WandBLogger
 from lerobot.configs import parser
 from lerobot.configs.train import TrainPipelineConfig
 from lerobot.scripts.eval import eval_policy
+from termcolor import cprint
 
 
 def update_policy(
@@ -253,6 +254,14 @@ def train(cfg: TrainPipelineConfig, accelerator: Callable = None):
 
     if not accelerator or accelerator.is_main_process:
         logging.info("Start offline training on a fixed dataset")
+
+    for _ in range(step, cfg.steps):
+        import ipdb; ipdb.set_trace()
+        start_time = time.perf_counter()
+        batch = next(dl_iter)
+        dataloading_s = time.perf_counter() - start_time
+        cprint(f'Total data load time: {dataloading_s}', 'yellow')
+
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
         batch = next(dl_iter)

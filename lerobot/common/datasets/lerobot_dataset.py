@@ -18,6 +18,8 @@ import logging
 import shutil
 from pathlib import Path
 from typing import Callable
+import time
+from termcolor import cprint
 
 import datasets
 import numpy as np
@@ -699,6 +701,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return query_timestamps
 
     def _query_hf_dataset(self, query_indices: dict[str, list[int]]) -> dict:
+        import ipdb; ipdb.set_trace()
         return {
             key: torch.stack(self.hf_dataset.select(q_idx)[key])
             for key, q_idx in query_indices.items()
@@ -728,13 +731,20 @@ class LeRobotDataset(torch.utils.data.Dataset):
         return self.num_frames
 
     def __getitem__(self, idx) -> dict:
+        # here is fast
         item = self.hf_dataset[idx]
         ep_idx = item["episode_index"].item()
 
         query_indices = None
         if self.delta_indices is not None:
             query_indices, padding = self._get_query_indices(idx, ep_idx)
+
+            start_time = time.perf_counter()
+            # here is always slow -> always 0.xx seconds
             query_result = self._query_hf_dataset(query_indices)
+            query_hf_s = time.perf_counter() - start_time
+            # cprint(f'LeRobotDataset __getitem__ query_hf_dataset time: {query_hf_s}', 'yellow')
+            
             item = {**item, **padding}
             for key, val in query_result.items():
                 item[key] = val
@@ -742,7 +752,12 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if len(self.meta.video_keys) > 0:
             current_ts = item["timestamp"].item()
             query_timestamps = self._get_query_timestamps(current_ts, query_indices)
+
+            start_time = time.perf_counter()
+            # here is sometimes slow -> always 0.0x seconds but sometimes 0.xx seconds
             video_frames = self._query_videos(query_timestamps, ep_idx)
+            query_video_s = time.perf_counter() - start_time
+            # cprint(f'LeRobotDataset __getitem__ query_videos time: {query_video_s}', 'green')
             item = {**video_frames, **item}
 
         if self.image_transforms is not None:
@@ -1312,7 +1327,13 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
             break
         else:
             raise AssertionError("We expect the loop to break out as long as the index is within bounds.")
+        # NOTE: here is slow
+        # import ipdb; ipdb.set_trace()
+        start_time = time.perf_counter()
         item = self._datasets[dataset_idx][idx - start_idx]
+        dataloading_s = time.perf_counter() - start_time
+        # cprint(f'MultiLeRobotDataset __getitem__ data load time: {dataloading_s}', 'red')
+
         item["dataset_index"] = torch.tensor(dataset_idx)
         item = self.normalize(item)
 

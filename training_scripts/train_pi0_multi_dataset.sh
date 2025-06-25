@@ -3,9 +3,9 @@
 # Dataset configuration
 ROBOMIND_ROOT="/gemini/space"
 REPO_IDS=(
-    "shared_dataset/RoboMind_2_lerobot/without_depth/benchmark1_0_release/tienkung_gello_1rgb_normkey_mul"
-    "shared_dataset/RoboMind_2_lerobot/without_depth/benchmark2_0_release/tienkung_gello_1rgb_normkey_mul"
-    "huggingface_cache/rhodes_lerobot/IPEC-COMMUNITY/bridge_orig_lerobot"
+    "huggingface_cache/rhodes_lerobot/IPEC-COMMUNITY/fractal20220817_data_lerobot"
+    # "huggingface_cache/rhodes_lerobot/IPEC-COMMUNITY/bridge_orig_lerobot"
+    # "huggingface_cache/rhodes_lerobot/realman/3tasks"
 )
 
 # Pretrained model configuration  
@@ -15,7 +15,7 @@ POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 OUTPUT_DIR="$MY_HOME/train_pi0/test_multi_dataset"
 
 # Training Parameters
-BATCH_SIZE=32
+BATCH_SIZE=128
 
 # Transform REPO_IDS to a string that can be parsed into list[str]
 REPO_IDS_STR="["
