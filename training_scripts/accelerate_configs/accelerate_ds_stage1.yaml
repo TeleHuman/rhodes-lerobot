@@ -1,7 +1,7 @@
 compute_environment: LOCAL_MACHINE
 debug: false
 deepspeed_config:
-  deepspeed_config_file: /root/rhodes_lerobot/training_scripts/accelerate_configs/deepspeed_configs/zero_stage1_config.json
+  deepspeed_config_file: /gemini/code/rhodes-lerobot/training_scripts/accelerate_configs/deepspeed_configs/zero_stage1_config.json
   zero3_init_flag: false
 distributed_type: MULTI_GPU # MULTI_GPU or DEEPSPEED
 downcast_bf16: 'no'
