@@ -213,12 +213,14 @@ def train(cfg: TrainPipelineConfig):
         eval_env = make_env(cfg.env, n_envs=cfg.eval.batch_size, use_async_envs=cfg.eval.use_async_envs)
 
     logging.info("Creating policy" if not accelerator else "[rank%d] Creating policy" % accelerator.process_index)
+
+    import ipdb; ipdb.set_trace()
     policy = make_policy(
         cfg=cfg.policy,
-        ds_meta=dataset.meta,
+        ds_meta=dataset.meta if not cfg.policy.use_delta_action else dataset.load_delta_action_norm_stats(),
         features=getattr(dataset, "intersection_features", None),
     )
-    if accelerator:
+    if accelerator and accelerator.mixed_precision != "no":
         policy = policy.to(weight_dtype)
     else:
         policy.to(device)

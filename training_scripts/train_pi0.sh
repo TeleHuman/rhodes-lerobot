@@ -5,7 +5,7 @@
 # DATASET_ROOT="/data/zhangyang/huggingface_cache/hub/datasets--lerobot--aloha_mobile_cabinet"
 
 # DATASET_REPO_ID="RoboMind/tienkung_gello_1rgb_normkey"
-DATASET_REPO_ID="IPEC-COMMUNITY/bridge_orig_lerobot_oneview"
+DATASET_REPO_ID="RoboTwin/all_tasks_50ep"
 DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 
 # Pretrained model configuration  

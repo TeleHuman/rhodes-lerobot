@@ -44,6 +44,7 @@ from lerobot.common.datasets.utils import (
     check_delta_timestamps,
     check_timestamps_sync,
     check_version_compatibility,
+    compute_norm_stats,
     create_empty_dataset_info,
     create_lerobot_dataset_card,
     dataset_to_policy_features,
@@ -60,6 +61,7 @@ from lerobot.common.datasets.utils import (
     load_info,
     load_stats,
     load_tasks,
+    load_norm_stats,
     validate_episode_buffer,
     validate_frame,
     write_episode,
@@ -621,6 +623,18 @@ class LeRobotDataset(torch.utils.data.Dataset):
             fpaths += video_files
 
         return fpaths
+    
+    def load_delta_action_norm_stats(self):
+        action_chunk_size = len(self.delta_indices['action'])
+
+        norm_stats_path = self.root / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
+
+        if norm_stats_path.exists():
+            norm_stats = load_norm_stats(self.root, action_chunk_size)
+            return norm_stats
+        else:
+            norm_stats = compute_norm_stats(self, keys = ['observation.state', 'action'])
+            return norm_stats
 
     def load_hf_dataset(self) -> datasets.Dataset:
         """hf_dataset contains all the observations, states, actions, rewards, etc."""
