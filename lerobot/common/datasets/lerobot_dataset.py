@@ -32,7 +32,7 @@ from huggingface_hub.constants import REPOCARD_NAME
 from huggingface_hub.errors import RevisionNotFoundError
 
 from lerobot.common.constants import HF_LEROBOT_HOME
-from lerobot.common.datasets.compute_stats import aggregate_stats, compute_episode_stats
+from lerobot.common.datasets.compute_stats import aggregate_stats, compute_episode_stats, compute_stats
 from lerobot.common.datasets.image_writer import AsyncImageWriter, write_image
 from lerobot.common.datasets.utils import (
     DEFAULT_FEATURES,
@@ -66,6 +66,8 @@ from lerobot.common.datasets.utils import (
     write_episode_stats,
     write_info,
     write_json,
+    serialize_dict,
+    STATS_PATH
 )
 from lerobot.common.datasets.video_utils import (
     VideoFrame,
@@ -992,6 +994,38 @@ class LeRobotDataset(torch.utils.data.Dataset):
             encode_video_frames(img_dir, video_path, self.fps, overwrite=True)
 
         return video_paths
+
+    def consolidate(self, run_compute_stats: bool = True, keep_image_files: bool = False) -> None:
+        self.hf_dataset = self.load_hf_dataset()
+        self.episode_data_index = get_episode_data_index(self.meta.episodes, self.episodes)
+        # check_timestamps_sync(self.hf_dataset, self.episode_data_index, self.fps, self.tolerance_s)
+
+        # if len(self.meta.video_keys) > 0:
+        #     self.encode_videos()
+        #     self.meta.write_video_info()
+
+        if not keep_image_files:
+            img_dir = self.root / "images"
+            if img_dir.is_dir():
+                shutil.rmtree(self.root / "images")
+
+        video_files = list(self.root.rglob("*.mp4"))
+        assert len(video_files) == self.num_episodes * len(self.meta.video_keys)
+
+        parquet_files = list(self.root.rglob("*.parquet"))
+        assert len(parquet_files) == self.num_episodes
+
+        if run_compute_stats:
+            self.stop_image_writer()
+            # TODO(aliberts): refactor stats in save_episodes
+            self.meta.stats = compute_stats(self)
+            serialized_stats = serialize_dict(self.meta.stats)
+            write_json(serialized_stats, self.root / STATS_PATH)
+            self.consolidated = True
+        else:
+            logging.warning(
+                "Skipping computation of the dataset statistics, dataset is not fully consolidated."
+            )
 
     @classmethod
     def create(

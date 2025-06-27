@@ -14,9 +14,186 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import numpy as np
+import torch
+import  tqdm
+from math import ceil
+from copy import deepcopy
+import einops
+from datasketches import kll_floats_sketch
 
 from lerobot.common.datasets.utils import load_image_as_numpy
 
+def get_stats_einops_patterns(dataset, num_workers=0):
+    """These einops patterns will be used to aggregate batches and compute statistics.
+
+    Note: We assume the images are in channel first format
+    """
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        num_workers=num_workers,
+        batch_size=2,
+        shuffle=False,
+    )
+    batch = next(iter(dataloader))
+
+    stats_patterns = {}
+
+    for key in dataset.features:
+        # sanity check that tensors are not float64
+        assert batch[key].dtype != torch.float64
+
+        # if isinstance(feats_type, (VideoFrame, Image)):
+        if key in dataset.meta.camera_keys:
+            # sanity check that images are channel first
+            _, c, h, w = batch[key].shape
+            assert c < h and c < w, f"expect channel first images, but instead {batch[key].shape}"
+
+            # sanity check that images are float32 in range [0,1]
+            assert batch[key].dtype == torch.float32, f"expect torch.float32, but instead {batch[key].dtype=}"
+            assert batch[key].max() <= 1, f"expect pixels lower than 1, but instead {batch[key].max()=}"
+            assert batch[key].min() >= 0, f"expect pixels greater than 1, but instead {batch[key].min()=}"
+
+            stats_patterns[key] = "b c h w -> c 1 1"
+        elif batch[key].ndim == 2:
+            stats_patterns[key] = "b c -> c "
+        elif batch[key].ndim == 1:
+            stats_patterns[key] = "b -> 1"
+        else:
+            raise ValueError(f"{key}, {batch[key].shape}")
+
+    return stats_patterns
+
+def compute_stats(dataset, batch_size=8, num_workers=8, max_num_samples=None):
+    if max_num_samples is None:
+        max_num_samples = len(dataset)
+
+    stats_patterns = get_stats_einops_patterns(dataset, num_workers)
+
+    mean_all = {}
+    std_all = {}
+    max_d = {}
+    min_d = {}
+
+    # 多维 KLL 初始化
+    quantile_keys = ["observation.state", "action"]
+    first_item = dataset[0]
+    kll_dict = {
+        key: [kll_floats_sketch() for _ in range(first_item[key].numel())]
+        for key in quantile_keys
+    }
+
+    def create_dl(seed):
+        gen = torch.Generator().manual_seed(seed)
+        return torch.utils.data.DataLoader(
+            dataset, num_workers=num_workers, batch_size=batch_size,
+            shuffle=True, drop_last=False, generator=gen,
+        )
+
+    # Pass 1: mean_all, min, max, KLL sketch update
+    running_N = 0
+    for batch in tqdm.tqdm(create_dl(1337), total=ceil(max_num_samples / batch_size), desc="Pass 1"):
+        B = len(batch["index"])
+        running_N += B
+        for key, pattern in stats_patterns.items():
+            x = batch[key].float()
+            bm = einops.reduce(x, pattern, "mean")
+
+            if key not in mean_all:
+                mean_all[key] = torch.zeros_like(bm)
+                std_all[key] = torch.zeros_like(bm)
+                max_d[key] = torch.full_like(bm, -float("inf"))
+                min_d[key] = torch.full_like(bm, float("inf"))
+
+            mean_all[key] += B * (bm - mean_all[key]) / running_N
+            max_d[key] = torch.maximum(max_d[key], einops.reduce(x, pattern, "max"))
+            min_d[key] = torch.minimum(min_d[key], einops.reduce(x, pattern, "min"))
+
+            if key in quantile_keys:
+                arr = x.view(B, -1).cpu().numpy()
+                for row in arr:
+                    for i, val in enumerate(row):
+                        kll_dict[key][i].update(float(val))
+
+        if running_N >= max_num_samples:
+            break
+
+    # Pass 2: std_all
+    running_N = 0
+    for batch in tqdm.tqdm(create_dl(1337), total=ceil(max_num_samples / batch_size), desc="Pass 2"):
+        B = len(batch["index"])
+        running_N += B
+        for key, pattern in stats_patterns.items():
+            x = batch[key].float()
+            batch_var = einops.reduce((x - mean_all[key]) ** 2, pattern, "mean")
+            std_all[key] += B * (batch_var - std_all[key]) / running_N
+        if running_N >= max_num_samples:
+            break
+
+    for key in std_all:
+        std_all[key] = torch.sqrt(std_all[key])
+
+    # Pass 3: 0.01-0.99 区间内的 mean/std
+    quantile_stats = {}
+    for key in quantile_keys:
+        q01 = np.array([sk.get_quantile(0.01) for sk in kll_dict[key]])
+        q99 = np.array([sk.get_quantile(0.99) for sk in kll_dict[key]])
+
+        total = 0
+        mean_q = None
+        std_q = None
+
+        for batch in create_dl(1337):
+            x = batch[key].float()
+            arr = x.view(x.shape[0], -1)
+            q01_t = torch.tensor(q01, device=arr.device)
+            q99_t = torch.tensor(q99, device=arr.device)
+
+            mask = ((arr >= q01_t) & (arr <= q99_t)).all(dim=1)
+            if mask.sum() == 0:
+                continue
+
+            sub = arr[mask]
+            B = sub.shape[0]
+            mean_b = sub.mean(dim=0)
+
+            if mean_q is None:
+                mean_q = torch.zeros_like(mean_b)
+                std_q = torch.zeros_like(mean_b)
+
+            mean_q += B * (mean_b - mean_q) / (total + B)
+            var_b = ((sub - mean_q) ** 2).mean(dim=0)
+            std_q += B * (var_b - std_q) / (total + B)
+
+            total += B
+
+        if std_q is not None:
+            std_q = torch.sqrt(std_q)
+            quantile_stats[key] = {
+                "mean": mean_q,
+                "std": std_q,
+                "q01": q01,
+                "q99": q99,
+            }
+
+    # 汇总
+    stats = {}
+    for key in stats_patterns:
+        stats[key] = {
+            "mean_all": mean_all[key],
+            "std_all": std_all[key],
+            "min": max_d[key],
+            "max": min_d[key],
+        }
+        if key in quantile_stats:
+            stats[key].update({
+                "mean": quantile_stats[key]["mean"],
+                "std": quantile_stats[key]["std"],
+                "q01": quantile_stats[key]["q01"],
+                "q99": quantile_stats[key]["q99"],
+            })
+
+    return stats
 
 def estimate_num_samples(
     dataset_len: int, min_num_samples: int = 100, max_num_samples: int = 10_000, power: float = 0.75
