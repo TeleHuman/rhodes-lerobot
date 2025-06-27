@@ -72,6 +72,8 @@ class TrainPipelineConfig(HubMixin):
     accelerator_logging_dir: str = "accelerate_logs"
     mixed_precision: str = "no"
     policy_optimizer_lr: float = 5e-5
+
+    gradient_checkpointing: bool = False
     
 
     def __post_init__(self):

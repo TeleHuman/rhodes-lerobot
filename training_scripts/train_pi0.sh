@@ -21,12 +21,15 @@ SAVE_FREQ=200
 ACTION_CHUNK_SIZE=50
 NUM_WORKERS=20
 
+GRADIENT_CHECKPOINTING=true
+
 CUDA_VISIBLE_DEVICES=0 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --dataset.image_transforms.enable=true \
     --dataset.wrist_transforms.enable=true \
     --policy.path=$POLICY_PATH \
+    --gradient_checkpointing=$GRADIENT_CHECKPOINTING \
     --policy.local_files_only=true \
     --output_dir=$OUTPUT_DIR \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ --num_workers=$NUM_WORKERS \

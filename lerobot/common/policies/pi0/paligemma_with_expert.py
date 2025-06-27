@@ -230,6 +230,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
     
     def embed_language_tokens(self, tokens: torch.Tensor):
         return self.paligemma.model.get_input_embeddings()(tokens)
+    
 
     # TODO: break down this huge forward into modules or functions
     def forward(
@@ -240,6 +241,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         inputs_embeds: List[torch.FloatTensor] = None,
         use_cache: Optional[bool] = None,
         fill_kv_cache: Optional[bool] = None,
+        gradient_checkpointing: Optional[bool] = False
     ):
         # models = [self.paligemma.language_model.model, self.gemma_expert.model]
         models = [self.paligemma.language_model, self.gemma_expert.model]
@@ -308,9 +310,21 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                     )
 
             attention_interface = self.get_attention_interface()
-            att_output = attention_interface(
-                attention_mask, batch_size, head_dim, query_states, key_states, value_states
-            )
+            def create_custom_forward(module):
+                def custom_forward(*inputs):
+                    return module(*inputs)
+                return custom_forward
+            
+            if gradient_checkpointing: 
+                att_output = torch.utils.checkpoint.checkpoint(
+                            create_custom_forward(attention_interface),
+                            attention_mask, batch_size, head_dim, query_states, key_states, value_states,
+                            use_reentrant=False,
+                        )
+            else:
+                att_output = attention_interface(
+                    attention_mask, batch_size, head_dim, query_states, key_states, value_states
+                )
             att_output = att_output.to(dtype=torch.bfloat16)
 
             # first part of att_output is prefix (up to sequence length, [:, 0:prefix_seq_len])
@@ -334,18 +348,14 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
 
                     out_emb = layer.post_attention_layernorm(out_emb)
 
-                    def create_custom_forward(module):
-                        def custom_forward(*inputs):
-                            return module(*inputs)
-
-                        return custom_forward
-    
-                    out_emb = torch.utils.checkpoint.checkpoint(
-                        create_custom_forward(layer.mlp),
-                        out_emb,
-                        use_reentrant=False,
-                    )
-                    # out_emb = layer.mlp(out_emb)
+                    if gradient_checkpointing: 
+                        out_emb = torch.utils.checkpoint.checkpoint(
+                            create_custom_forward(layer.mlp),
+                            out_emb,
+                            use_reentrant=False,
+                        )
+                    else:
+                        out_emb = layer.mlp(out_emb)
 
                     # TODO: second dropout (by default 0.0)
 

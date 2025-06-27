@@ -72,16 +72,17 @@ def update_policy(
     use_amp: bool = False,
     lock=None,
     accelerator= None,
+    gradient_checkpointing: bool = False
 ) -> tuple[MetricsTracker, dict]:
     train_loss = 0.0
 
     start_time = time.perf_counter()
     device = get_device_from_parameters(policy)
     policy.train()
-
+    
     if accelerator:
         with accelerator.accumulate(policy):
-            loss, output_dict = policy.forward(batch)
+            loss, output_dict = policy.forward(batch, gradient_checkpointing)
             # TODO(rcadene): policy.unnormalize_outputs(out_dict)
 
             avg_loss = accelerator.gather(loss.detach().clone().unsqueeze(0)).mean()
@@ -102,7 +103,7 @@ def update_policy(
             
     else:
         with torch.autocast(device_type=device.type) if use_amp and accelerator is None else nullcontext():
-            loss, output_dict = policy.forward(batch)
+            loss, output_dict = policy.forward(batch, gradient_checkpointing)
             # TODO(rcadene): policy.unnormalize_outputs(out_dict)
         grad_scaler.scale(loss).backward()
         # Unscale the gradient of the optimizer's assigned params in-place **prior to gradient clipping**.
@@ -373,6 +374,7 @@ def train(cfg: TrainPipelineConfig):
             lr_scheduler=lr_scheduler,
             use_amp=cfg.policy.use_amp,
             accelerator=accelerator,
+            gradient_checkpointing=cfg.gradient_checkpointing
         )
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
@@ -471,4 +473,16 @@ def train(cfg: TrainPipelineConfig):
 
 if __name__ == "__main__":
     init_logging()
+
+    torch.cuda.memory._record_memory_history(max_entries=100000)
+
     train()
+
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+    file_name = f"visual_mem_{timestamp}.pickle"
+    # save record:
+    torch.cuda.memory._dump_snapshot(file_name)
+
+    # Stop recording memory snapshot history:
+    torch.cuda.memory._record_memory_history(enabled=None)

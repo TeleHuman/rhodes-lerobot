@@ -43,6 +43,8 @@ OUTPUT_DIR="$MY_HOME/train_pi0/${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_$
 echo "Output dir: $OUTPUT_DIR"
 # ------------------------------------------------------------
 
+GRADIENT_CHECKPOINTING=true
+
 ### accelerate launch command
 accelerate launch \
     --num_processes=$GPUS \
@@ -51,6 +53,7 @@ accelerate launch \
     --mixed_precision=$MIXED_PRECISION \
     --gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS \
     --gradient_clipping=$GRADIENT_CLIPPING \
+    --gradient_checkpointing=$GRADIENT_CHECKPOINTING \
     lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
