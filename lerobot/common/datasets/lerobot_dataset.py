@@ -79,6 +79,7 @@ from lerobot.common.datasets.video_utils import (
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.configs.types import NormalizationMode, FeatureType
 from lerobot.common.policies.normalize import Normalize, Unnormalize, MultiDatasetNormalize, MultiDatasetUnnormalize
+from lerobot.common.datasets.transforms import DeltaActionTransform
 
 CODEBASE_VERSION = "v2.1"
 
@@ -106,6 +107,8 @@ class LeRobotDatasetMetadata:
             (self.root / "meta").mkdir(exist_ok=True, parents=True)
             self.pull_from_repo(allow_patterns="meta/")
             self.load_metadata()
+
+        self.delta_action_norm_stats = None
 
     def load_metadata(self):
         self.info = load_info(self.root)
@@ -294,6 +297,11 @@ class LeRobotDatasetMetadata:
                 video_path = self.root / self.get_video_file_path(ep_index=0, vid_key=key)
                 self.info["features"][key]["info"] = get_video_info(video_path)
 
+    def update_norm_stats(self, norm_stats: dict):
+        self.delta_action_norm_stats = norm_stats
+        for key, value in norm_stats.items():
+            self.stats[key] = value # directly update the stats
+
     def __repr__(self):
         feature_keys = list(self.features)
         return (
@@ -372,6 +380,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         force_cache_sync: bool = False,
         download_videos: bool = True,
         video_backend: str | None = None,
+        use_delta_action: bool = False,
     ):
         """
         2 modes are available for instantiating this class, depending on 2 different use cases:
@@ -521,6 +530,19 @@ class LeRobotDataset(torch.utils.data.Dataset):
         ep_data_index_np = {k: t.numpy() for k, t in self.episode_data_index.items()}       # 两个keys: from 和 to
         check_timestamps_sync(timestamps, episode_indices, ep_data_index_np, self.fps, self.tolerance_s)
 
+        # 获取action特征的名称列表
+        action_names = self.meta.features['action']['names']
+        # 创建action mask,初始化为1
+        self.action_mask = torch.ones(len(action_names), dtype=torch.bool)
+        # 遍历action names,将gripper相关的位置设为0 
+        for i, name in enumerate(action_names):
+            if 'gripper' in name.lower():
+                self.action_mask[i] = False
+
+        self.use_delta_action = use_delta_action
+        if self.use_delta_action:
+            self.delta_action_transform = DeltaActionTransform(self.action_mask)
+
         # Setup delta_indices
         if self.delta_timestamps is not None:
             check_delta_timestamps(self.delta_timestamps, self.fps, self.tolerance_s)
@@ -631,10 +653,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         if norm_stats_path.exists():
             norm_stats = load_norm_stats(self.root, action_chunk_size)
-            return norm_stats
         else:
             norm_stats = compute_norm_stats(self, keys = ['observation.state', 'action'])
-            return norm_stats
+        
+        self.meta.update_norm_stats(norm_stats)
 
     def load_hf_dataset(self) -> datasets.Dataset:
         """hf_dataset contains all the observations, states, actions, rewards, etc."""
@@ -759,6 +781,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
             for key, val in query_result.items():
                 item[key] = val
 
+        if self.use_delta_action:
+            item = self.delta_action_transform(item)
+
         if len(self.meta.video_keys) > 0:
             current_ts = item["timestamp"].item()
             query_timestamps = self._get_query_timestamps(current_ts, query_indices)
@@ -778,6 +803,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         item["task"] = self.meta.tasks[task_idx]
 
         # Add repo_id as a string
+        # TODO (chenyou fan): remove this key from the dataset batch
         item["dataset"] = self.repo_id
 
         return item

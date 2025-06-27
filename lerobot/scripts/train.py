@@ -182,7 +182,7 @@ def train(cfg: TrainPipelineConfig):
     else:
         wandb_logger = None
         logging.info(colored("Logs will be saved locally.", "yellow", attrs=["bold"]))
-        if accelerator.is_main_process:
+        if not accelerator or accelerator.is_main_process:
             tb_logger = SummaryWriter(log_dir=cfg.output_dir / "tensorboard")
 
     if cfg.seed is not None:
@@ -207,6 +207,9 @@ def train(cfg: TrainPipelineConfig):
     # with accelerator.main_process_first():
     dataset = make_dataset(cfg)
 
+    if cfg.policy.use_delta_action:
+        dataset.load_delta_action_norm_stats()
+
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
     # using the eval.py instead, with gym_dora environment and dora-rs.
@@ -217,10 +220,9 @@ def train(cfg: TrainPipelineConfig):
 
     logging.info("Creating policy" if not accelerator else "[rank%d] Creating policy" % accelerator.process_index)
 
-    import ipdb; ipdb.set_trace()
     policy = make_policy(
         cfg=cfg.policy,
-        ds_meta=dataset.meta if not cfg.policy.use_delta_action else dataset.load_delta_action_norm_stats(),
+        ds_meta=dataset.meta,
         features=getattr(dataset, "intersection_features", None),
     )
     if accelerator and accelerator.mixed_precision != "no":

@@ -23,6 +23,131 @@ from torchvision.transforms.v2 import Transform
 from torchvision.transforms.v2 import functional as F  # noqa: N812
 
 
+### newly added
+class DeltaActionTransform(Transform):
+    """Transform absolute actions into delta action space.
+    
+    This class is used to convert absolute actions into delta actions by subtracting the current state
+    from the action for specified dimensions (determined by action_mask).
+    
+    The transform assumes:
+    - action shape: (batch_size, horizon, action_dim) or (horizon, action_dim) or (action_dim,)
+    - state shape: (batch_size, state_dim) or (state_dim,)
+    
+    Args:
+        action_mask: Boolean tensor indicating which action dimensions should be converted to delta.
+                    1 means convert to delta, 0 means keep absolute.
+    """
+    def __init__(self, action_mask: torch.Tensor) -> None:
+        super().__init__()
+        self.action_mask = action_mask
+        self.action_mask_dims = action_mask.shape[0]
+
+    def forward(self, *inputs: Any) -> Any:
+        """
+        Transform the input dictionary by converting absolute actions to delta actions.
+        
+        Args:
+            inputs: Tuple containing a single dictionary with 'observation.state' and 'action' keys
+            
+        Returns:
+            Updated dictionary with delta actions
+        """
+        if len(inputs) != 1 or not isinstance(inputs[0], dict):
+            return inputs
+
+        item = inputs[0]
+        if 'observation.state' not in item or 'action' not in item:
+            return item
+
+        state = item['observation.state']
+        action = item['action']
+        
+        # 获取掩码维度
+        mask = self.action_mask
+        dims = self.action_mask_dims
+        
+        # 扩展state维度以匹配action
+        # e.g., state: [batch_size, state_dim] -> [batch_size, 1, state_dim]
+        state_expanded = state.unsqueeze(-2)
+        
+        # 只对掩码维度进行delta转换
+        action[..., :dims] -= torch.where(
+            mask,
+            state_expanded[..., :dims],
+            torch.zeros_like(state_expanded[..., :dims])
+        )
+        
+        item['action'] = action
+        return item
+
+    def extra_repr(self) -> str:
+        """Return extra representation string."""
+        return f"action_mask={self.action_mask}"
+
+class AbsoluteActionTransform(Transform):
+    """Transform delta action space back to absolute action space.
+    
+    This class is used to convert delta actions back to absolute action space by adding the current state
+    to the action for specified dimensions (determined by action_mask).
+    
+    The transform assumes:
+    - action shape: (batch_size, horizon, action_dim) or (horizon, action_dim) or (action_dim,)
+    - state shape: (batch_size, state_dim) or (state_dim,)
+    
+    Args:
+        action_mask: Boolean tensor indicating which action dimensions should be converted to absolute.
+                    1 means convert to absolute, 0 means keep delta.
+    """
+    def __init__(self, action_mask: torch.Tensor) -> None:
+        super().__init__()
+        self.action_mask = action_mask
+        self.action_mask_dims = action_mask.shape[0]
+
+    def forward(self, *inputs: Any) -> Any:
+        """
+        通过将delta动作转换为绝对动作来转换输入字典。
+        
+        参数:
+            inputs: 包含单个字典的元组,该字典具有'observation.state'和'action'键
+            
+        返回:
+            更新后的带有绝对动作的字典
+        """
+        if len(inputs) != 1 or not isinstance(inputs[0], dict):
+            return inputs
+
+        item = inputs[0]
+        if 'observation.state' not in item or 'action' not in item:
+            return item
+
+        state = item['observation.state']
+        action = item['action']
+        
+        # 获取掩码维度
+        mask = self.action_mask
+        dims = self.action_mask_dims
+        
+        # 扩展state维度以匹配action
+        # e.g., state: [batch_size, state_dim] -> [batch_size, 1, state_dim]
+        state_expanded = state.unsqueeze(-2)
+        
+        # 只对掩码维度进行绝对动作转换
+        action[..., :dims] += torch.where(
+            mask,
+            state_expanded[..., :dims],
+            torch.zeros_like(state_expanded[..., :dims])
+        )
+        
+        item['action'] = action
+        return item
+
+    def extra_repr(self) -> str:
+        """返回额外的表示字符串。"""
+        return f"action_mask={self.action_mask}"
+### ------------------------------------------------------------
+
+
 class RandomSubsetApply(Transform):
     """Apply a random subset of N transformations from a list of transformations.
 

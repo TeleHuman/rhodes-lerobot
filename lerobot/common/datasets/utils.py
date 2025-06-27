@@ -204,6 +204,7 @@ def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
 def load_norm_stats(local_dir: Path, action_chunk_size: int) -> dict[str, dict[str, np.ndarray]]:
     norm_stats_path = local_dir / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
     if norm_stats_path.exists():
+        print(f"Loading delta action norm stats from {norm_stats_path}")
         with open(norm_stats_path, 'r') as f:
             norm_stats = json.load(f)
         return cast_stats_to_numpy(norm_stats)
@@ -831,18 +832,13 @@ def validate_episode_buffer(episode_buffer: dict, total_episodes: int, features:
         )
 
 
-def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_workers=8, batch_size=32):
-    mp_context = None
-    if num_workers > 0:
-        mp_context = multiprocessing.get_context("spawn")
-
+def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_workers=16, batch_size=32):
     data_loader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        multiprocessing_context=mp_context,
-        persistent_workers=num_workers > 0,
+        pin_memory=True,
         drop_last=True,
     )
 
@@ -850,10 +846,9 @@ def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_work
     action_chunk_size = len(dataset.delta_indices['action'])
     stats = {key: RunningStats() for key in keys}
     
-    import ipdb; ipdb.set_trace()
     for batch in tqdm.tqdm(data_loader, total=num_batches, desc="Computing stats"):
         for key in keys:
-            values = np.asarray(batch[key][0])
+            values = np.asarray(batch[key])
             stats[key].update(values.reshape(-1, values.shape[-1]))
 
     norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}

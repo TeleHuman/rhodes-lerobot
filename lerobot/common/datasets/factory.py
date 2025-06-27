@@ -136,6 +136,7 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
             wrist_transforms=wrist_transforms,
             revision=cfg.dataset.revision,
             video_backend=cfg.dataset.video_backend,
+            use_delta_action=cfg.policy.use_delta_action,
         )
     elif isinstance(cfg.dataset.repo_id, list):
         delta_timestamps_ds_dict = {}
