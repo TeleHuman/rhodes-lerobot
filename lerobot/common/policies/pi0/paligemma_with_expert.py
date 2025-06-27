@@ -333,7 +333,19 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                     after_first_residual = out_emb.clone()
 
                     out_emb = layer.post_attention_layernorm(out_emb)
-                    out_emb = layer.mlp(out_emb)
+
+                    def create_custom_forward(module):
+                        def custom_forward(*inputs):
+                            return module(*inputs)
+
+                        return custom_forward
+    
+                    out_emb = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(layer.mlp),
+                        out_emb,
+                        use_reentrant=False,
+                    )
+                    # out_emb = layer.mlp(out_emb)
 
                     # TODO: second dropout (by default 0.0)
 

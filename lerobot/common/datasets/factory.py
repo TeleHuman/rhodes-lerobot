@@ -120,9 +120,12 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         height = image_shape[height_idx]
         width = image_shape[width_idx]
 
-        image_transforms = ImageTransforms.create_piohfive_sequential_transform(
-            (height, width)
-        ) if cfg.dataset.image_transforms.enable else None
+        ### Option 1: use piohfive sequential transform
+        # image_transforms = ImageTransforms.create_piohfive_sequential_transform(
+        #     (height, width)
+        # ) if cfg.dataset.image_transforms.enable else None
+        ### Option 2: use original transform in Lerobot
+        image_transforms = ImageTransforms(cfg.dataset.image_transforms, height=height, width=width) if cfg.dataset.image_transforms.enable else None
 
         wrist_transforms = ImageTransforms(cfg.dataset.wrist_transforms, height=None, width=None) if cfg.dataset.wrist_transforms.enable else None
 

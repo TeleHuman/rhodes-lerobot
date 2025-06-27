@@ -5,7 +5,7 @@
 # DATASET_ROOT="/data/zhangyang/huggingface_cache/hub/datasets--lerobot--aloha_mobile_cabinet"
 
 # DATASET_REPO_ID="RoboMind/tienkung_gello_1rgb_normkey"
-DATASET_REPO_ID="RoboTwin/all_tasks_50ep"
+DATASET_REPO_ID="IPEC-COMMUNITY/bridge_orig_lerobot_oneview"
 DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 
 # Pretrained model configuration  
@@ -15,13 +15,13 @@ POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 OUTPUT_DIR="outputs/train_pi0/test_single_gpu"
 
 # Training Parameters
-BATCH_SIZE=8
-TOTAL_STEPS=280000
+BATCH_SIZE=24
+TOTAL_STEPS=100
 SAVE_FREQ=200
 ACTION_CHUNK_SIZE=50
-NUM_WORKERS=4
+NUM_WORKERS=20
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \
+CUDA_VISIBLE_DEVICES=0 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
     --dataset.image_transforms.enable=true \
