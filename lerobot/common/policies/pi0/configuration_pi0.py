@@ -128,20 +128,20 @@ class PI0Config(PreTrainedConfig):
             )
             self.input_features[key] = empty_camera
 
-    def get_optimizer_preset(self) -> AdamWConfig:
+    def get_optimizer_preset(self, lr: float, **kwargs) -> AdamWConfig:
         return AdamWConfig(
-            lr=self.optimizer_lr,
+            lr=lr if lr is not None else self.optimizer_lr,
             betas=self.optimizer_betas,
             eps=self.optimizer_eps,
             weight_decay=self.optimizer_weight_decay,
         )
 
-    def get_scheduler_preset(self):
+    def get_scheduler_preset(self, lr: float, total_steps: int, **kwargs):
         return CosineDecayWithWarmupSchedulerConfig(
-            peak_lr=self.optimizer_lr,
+            peak_lr=lr if lr is not None else self.optimizer_lr,
             decay_lr=self.scheduler_decay_lr,
             num_warmup_steps=self.scheduler_warmup_steps,
-            num_decay_steps=self.scheduler_decay_steps,
+            num_decay_steps=total_steps,
         )
 
     @property

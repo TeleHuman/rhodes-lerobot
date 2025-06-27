@@ -60,6 +60,9 @@ class PreTrainedConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
     # automatic gradient scaling is used.
     use_amp: bool = False
 
+    # updated by Yang Zhang and Chenyou
+    use_delta_action: bool = True
+
     def __post_init__(self):
         self.pretrained_path = None
         if not self.device or not is_torch_device_available(self.device):
@@ -91,11 +94,11 @@ class PreTrainedConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_optimizer_preset(self) -> OptimizerConfig:
+    def get_optimizer_preset(self, **kwargs) -> OptimizerConfig:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_scheduler_preset(self) -> LRSchedulerConfig | None:
+    def get_scheduler_preset(self, **kwargs) -> LRSchedulerConfig | None:
         raise NotImplementedError
 
     @abc.abstractmethod

@@ -60,6 +60,8 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers import AutoTokenizer
 
+from lerobot.configs.policies import PreTrainedConfig
+
 from lerobot.common.constants import ACTION, OBS_ROBOT
 from lerobot.common.policies.normalize import Normalize, Unnormalize, MultiDatasetNormalize, MultiDatasetUnnormalize
 from lerobot.common.policies.pi0.configuration_pi0 import PI0Config
@@ -276,9 +278,13 @@ class PI0Policy(PreTrainedPolicy):
         # )
 
         used_multi_lerobot_dataset = True
-        for k in dataset_stats.keys():
-            if 'observation' in k:
-                used_multi_lerobot_dataset = False
+
+        if dataset_stats is not None:
+            for k in dataset_stats.keys():
+                if 'observation' in k:
+                    used_multi_lerobot_dataset = False
+        else:
+            used_multi_lerobot_dataset = False
 
         if used_multi_lerobot_dataset:
             self.normalize_inputs = None
@@ -294,6 +300,8 @@ class PI0Policy(PreTrainedPolicy):
             )
 
         self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
+        # self.language_tokenizer = AutoTokenizer.from_pretrained("/gemini/space/huggingface_cache/hub/models--google--paligemma-3b-pt-224/snapshots/35e4f46485b4d07967e7e9935bc3786aad50687c",
+        #                                                         local_files_only=True, legacy=False)
         self.model = PI0FlowMatching(config)
 
         self.reset()
@@ -527,7 +535,7 @@ class PI0Policy(PreTrainedPolicy):
         from huggingface_hub.errors import HfHubHTTPError
 
         if config is None:
-            config = PI0Config.from_pretrained(
+            config = PreTrainedConfig.from_pretrained(
                 pretrained_name_or_path=pretrained_name_or_path,
                 force_download=force_download,
                 resume_download=resume_download,
@@ -633,7 +641,8 @@ class PI0FlowMatching(nn.Module):
         )
         self.paligemma_with_expert = PaliGemmaWithExpertModel(paligemma_with_export_config)
 
-        # Projections are float32
+        # Projections are float32 or float16 or bfloat16
+        # It depends on whether to use the mixed precision training
         self.state_proj = nn.Linear(self.config.max_state_dim, self.config.proj_width)
         self.action_in_proj = nn.Linear(self.config.max_action_dim, self.config.proj_width)
         self.action_out_proj = nn.Linear(self.config.proj_width, self.config.max_action_dim)
@@ -647,20 +656,20 @@ class PI0FlowMatching(nn.Module):
         for params in self.state_proj.parameters():
             params.requires_grad = self.config.train_state_proj
 
-    def sample_noise(self, shape, device):
+    def sample_noise(self, shape, device, dtype):
         noise = torch.normal(
             mean=0.0,
             std=1.0,
             size=shape,
-            dtype=torch.float32,
+            dtype=dtype,
             device=device,
         )
         return noise
 
-    def sample_time(self, bsize, device):
+    def sample_time(self, bsize, device, dtype):
         time_beta = sample_beta(1.5, 1.0, bsize, device)
         time = time_beta * 0.999 + 0.001
-        return time.to(dtype=torch.float32, device=device)
+        return time.to(dtype=dtype, device=device)
 
     def embed_prefix(
         self, images, img_masks, lang_tokens, lang_masks
@@ -772,10 +781,10 @@ class PI0FlowMatching(nn.Module):
     ) -> Tensor:
         """Do a full training forward pass and compute the loss (batch_size x num_steps x num_motors)"""
         if noise is None:
-            noise = self.sample_noise(actions.shape, actions.device)
+            noise = self.sample_noise(actions.shape, actions.device, actions.dtype)
 
         if time is None:
-            time = self.sample_time(actions.shape[0], actions.device)
+            time = self.sample_time(actions.shape[0], actions.device, actions.dtype)
 
         time_expanded = time[:, None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
@@ -802,7 +811,7 @@ class PI0FlowMatching(nn.Module):
         )
         suffix_out = suffix_out[:, -self.config.n_action_steps :]
         # Original openpi code, upcast attention output
-        suffix_out = suffix_out.to(dtype=torch.float32)
+        suffix_out = suffix_out.to(dtype=actions.dtype)
         v_t = self.action_out_proj(suffix_out)
 
         losses = F.mse_loss(u_t, v_t, reduction="none")
@@ -812,10 +821,11 @@ class PI0FlowMatching(nn.Module):
         """Do a full inference forward and compute the action (batch_size x num_steps x num_motors)"""
         bsize = state.shape[0]
         device = state.device
+        dtype = state.dtype
 
         if noise is None:
             actions_shape = (bsize, self.config.n_action_steps, self.config.max_action_dim)
-            noise = self.sample_noise(actions_shape, device)
+            noise = self.sample_noise(actions_shape, device, dtype)
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(
             images, img_masks, lang_tokens, lang_masks
@@ -834,10 +844,10 @@ class PI0FlowMatching(nn.Module):
         )
 
         dt = -1.0 / self.config.num_steps
-        dt = torch.tensor(dt, dtype=torch.float32, device=device)
+        dt = torch.tensor(dt, dtype=dtype, device=device)
 
         x_t = noise
-        time = torch.tensor(1.0, dtype=torch.float32, device=device)
+        time = torch.tensor(1.0, dtype=dtype, device=device)
         while time >= -dt / 2:
             expanded_time = time.expand(bsize)
             v_t = self.denoise_step(
@@ -886,6 +896,6 @@ class PI0FlowMatching(nn.Module):
         )
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self.config.n_action_steps :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
+        suffix_out = suffix_out.to(dtype=x_t.dtype)
         v_t = self.action_out_proj(suffix_out)
         return v_t

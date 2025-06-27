@@ -55,6 +55,8 @@ def save_training_step(step: int, save_dir: Path) -> None:
 
 
 def load_training_step(save_dir: Path) -> int:
+    if isinstance(save_dir, str):
+        save_dir = Path(save_dir)
     training_step = load_json(save_dir / TRAINING_STEP)
     return training_step["step"]
 

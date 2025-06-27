@@ -106,7 +106,7 @@ class MetricsTracker:
         self.steps = initial_step
         # A sample is an (observation,action) pair, where observation and action
         # can be on multiple timestamps. In a batch, we have `batch_size` number of samples.
-        self.samples = self.steps * self._batch_size
+        self.samples = self.steps * self._batch_size * (self.accelerator.num_processes * self.accelerator.gradient_accumulation_steps if self.accelerator else 1)
         self.episodes = self.samples / self._avg_samples_per_ep
         self.epochs = self.samples / self._num_frames
 
@@ -131,7 +131,7 @@ class MetricsTracker:
         Updates metrics that depend on 'step' for one step.
         """
         self.steps += 1
-        self.samples += self._batch_size * (self.accelerator.num_processes if self.accelerator else 1)
+        self.samples += self._batch_size * (self.accelerator.num_processes * self.accelerator.gradient_accumulation_steps if self.accelerator else 1)
         self.episodes = self.samples / self._avg_samples_per_ep
         self.epochs = self.samples / self._num_frames
 

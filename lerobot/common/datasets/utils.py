@@ -17,6 +17,8 @@ import contextlib
 import importlib.resources
 import json
 import logging
+import tqdm
+import multiprocessing
 from collections.abc import Iterator
 from itertools import accumulate
 from pathlib import Path
@@ -34,12 +36,14 @@ from huggingface_hub import DatasetCard, DatasetCardData, HfApi
 from huggingface_hub.errors import RevisionNotFoundError
 from PIL import Image as PILImage
 from torchvision import transforms
+from torch.utils.data import DataLoader
 
 from lerobot.common.datasets.backward_compatibility import (
     V21_MESSAGE,
     BackwardCompatibilityError,
     ForwardCompatibilityError,
 )
+from lerobot.common.datasets.normalize import RunningStats, serialize_json
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.utils.utils import is_valid_numpy_dtype_string
 from lerobot.configs.types import DictLike, FeatureType, PolicyFeature
@@ -196,6 +200,15 @@ def load_stats(local_dir: Path) -> dict[str, dict[str, np.ndarray]]:
         return None
     stats = load_json(local_dir / STATS_PATH)
     return cast_stats_to_numpy(stats)
+
+def load_norm_stats(local_dir: Path, action_chunk_size: int) -> dict[str, dict[str, np.ndarray]]:
+    norm_stats_path = local_dir / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
+    if norm_stats_path.exists():
+        print(f"Loading delta action norm stats from {norm_stats_path}")
+        with open(norm_stats_path, 'r') as f:
+            norm_stats = json.load(f)
+        return cast_stats_to_numpy(norm_stats)
+    return None
 
 
 def write_task(task_index: int, task: dict, local_dir: Path):
@@ -817,3 +830,31 @@ def validate_episode_buffer(episode_buffer: dict, total_episodes: int, features:
             f"In episode_buffer not in features: {buffer_keys - set(features)}"
             f"In features not in episode_buffer: {set(features) - buffer_keys}"
         )
+
+
+def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_workers=16, batch_size=32):
+    data_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
+
+    num_batches = len(dataset) // batch_size
+    action_chunk_size = len(dataset.delta_indices['action'])
+    stats = {key: RunningStats() for key in keys}
+    
+    for batch in tqdm.tqdm(data_loader, total=num_batches, desc="Computing stats"):
+        for key in keys:
+            values = np.asarray(batch[key])
+            stats[key].update(values.reshape(-1, values.shape[-1]))
+
+    norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
+
+    output_path = dataset.root / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
+    print(f"Writing stats to: {output_path}")
+    output_path.write_text(serialize_json(norm_stats))
+
+    return norm_stats

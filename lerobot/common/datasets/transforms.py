@@ -23,6 +23,131 @@ from torchvision.transforms.v2 import Transform
 from torchvision.transforms.v2 import functional as F  # noqa: N812
 
 
+### newly added
+class DeltaActionTransform(Transform):
+    """Transform absolute actions into delta action space.
+    
+    This class is used to convert absolute actions into delta actions by subtracting the current state
+    from the action for specified dimensions (determined by action_mask).
+    
+    The transform assumes:
+    - action shape: (batch_size, horizon, action_dim) or (horizon, action_dim) or (action_dim,)
+    - state shape: (batch_size, state_dim) or (state_dim,)
+    
+    Args:
+        action_mask: Boolean tensor indicating which action dimensions should be converted to delta.
+                    1 means convert to delta, 0 means keep absolute.
+    """
+    def __init__(self, action_mask: torch.Tensor) -> None:
+        super().__init__()
+        self.action_mask = action_mask
+        self.action_mask_dims = action_mask.shape[0]
+
+    def forward(self, *inputs: Any) -> Any:
+        """
+        Transform the input dictionary by converting absolute actions to delta actions.
+        
+        Args:
+            inputs: Tuple containing a single dictionary with 'observation.state' and 'action' keys
+            
+        Returns:
+            Updated dictionary with delta actions
+        """
+        if len(inputs) != 1 or not isinstance(inputs[0], dict):
+            return inputs
+
+        item = inputs[0]
+        if 'observation.state' not in item or 'action' not in item:
+            return item
+
+        state = item['observation.state']
+        action = item['action']
+        
+        # 获取掩码维度
+        mask = self.action_mask
+        dims = self.action_mask_dims
+        
+        # 扩展state维度以匹配action
+        # e.g., state: [batch_size, state_dim] -> [batch_size, 1, state_dim]
+        state_expanded = state.unsqueeze(-2)
+        
+        # 只对掩码维度进行delta转换
+        action[..., :dims] -= torch.where(
+            mask,
+            state_expanded[..., :dims],
+            torch.zeros_like(state_expanded[..., :dims])
+        )
+        
+        item['action'] = action
+        return item
+
+    def extra_repr(self) -> str:
+        """Return extra representation string."""
+        return f"action_mask={self.action_mask}"
+
+class AbsoluteActionTransform(Transform):
+    """Transform delta action space back to absolute action space.
+    
+    This class is used to convert delta actions back to absolute action space by adding the current state
+    to the action for specified dimensions (determined by action_mask).
+    
+    The transform assumes:
+    - action shape: (batch_size, horizon, action_dim) or (horizon, action_dim) or (action_dim,)
+    - state shape: (batch_size, state_dim) or (state_dim,)
+    
+    Args:
+        action_mask: Boolean tensor indicating which action dimensions should be converted to absolute.
+                    1 means convert to absolute, 0 means keep delta.
+    """
+    def __init__(self, action_mask: torch.Tensor) -> None:
+        super().__init__()
+        self.action_mask = action_mask
+        self.action_mask_dims = action_mask.shape[0]
+
+    def forward(self, *inputs: Any) -> Any:
+        """
+        通过将delta动作转换为绝对动作来转换输入字典。
+        
+        参数:
+            inputs: 包含单个字典的元组,该字典具有'observation.state'和'action'键
+            
+        返回:
+            更新后的带有绝对动作的字典
+        """
+        if len(inputs) != 1 or not isinstance(inputs[0], dict):
+            return inputs
+
+        item = inputs[0]
+        if 'observation.state' not in item or 'action' not in item:
+            return item
+
+        state = item['observation.state']
+        action = item['action']
+        
+        # 获取掩码维度
+        mask = self.action_mask
+        dims = self.action_mask_dims
+        
+        # 扩展state维度以匹配action
+        # e.g., state: [batch_size, state_dim] -> [batch_size, 1, state_dim]
+        state_expanded = state.unsqueeze(-2)
+        
+        # 只对掩码维度进行绝对动作转换
+        action[..., :dims] += torch.where(
+            mask,
+            state_expanded[..., :dims],
+            torch.zeros_like(state_expanded[..., :dims])
+        )
+        
+        item['action'] = action
+        return item
+
+    def extra_repr(self) -> str:
+        """返回额外的表示字符串。"""
+        return f"action_mask={self.action_mask}"
+### ------------------------------------------------------------
+
+
 class RandomSubsetApply(Transform):
     """Apply a random subset of N transformations from a list of transformations.
 
@@ -213,9 +338,56 @@ class ImageTransformsConfig:
                 type="RandomResizedCrop",
                 kwargs={
                     "size": [224,224],
-                    "ratio": [1,1],
+                    "ratio": [1.0,1.0],
                     "scale": [0.95,0.95], # delin used [0.9, 0.95]
                 },
+            ),
+        }
+    )
+
+@dataclass
+class WristTransformsConfig:
+    """
+    These transforms are all using standard torchvision.transforms.v2
+    You can find out how these transformations affect images here:
+    https://pytorch.org/vision/0.18/auto_examples/transforms/plot_transforms_illustrations.html
+    We use a custom RandomSubsetApply container to sample them.
+    """
+
+    # Set this flag to `true` to enable transforms during training
+    enable: bool = False
+    # This is the maximum number of transforms (sampled from these below) that will be applied to each frame.
+    # It's an integer in the interval [1, number_of_available_transforms].
+    max_num_transforms: int = 3
+    # By default, transforms are applied in Torchvision's suggested order (shown below).
+    # Set this to True to apply them in a random order.
+    random_order: bool = False
+    tfs: dict[str, ImageTransformConfig] = field(
+        default_factory=lambda: {
+            "brightness": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"brightness": (0.8, 1.2)},
+            ),
+            "contrast": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"contrast": (0.8, 1.2)},
+            ),
+            "saturation": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"saturation": (0.5, 1.5)},
+            ),
+            "hue": ImageTransformConfig(
+                weight=1.0,
+                type="ColorJitter",
+                kwargs={"hue": (-0.05, 0.05)},
+            ),
+            "sharpness": ImageTransformConfig(
+                weight=1.0,
+                type="SharpnessJitter",
+                kwargs={"sharpness": (0.5, 1.5)},
             ),
         }
     )
@@ -239,12 +411,18 @@ def make_transform_from_config(cfg: ImageTransformConfig):
 class ImageTransforms(Transform):
     """A class to compose image transforms based on configuration."""
 
-    def __init__(self, cfg: ImageTransformsConfig) -> None:
+    def __init__(self, cfg: ImageTransformsConfig, height, width) -> None:
         super().__init__()
         self._cfg = cfg
+        self.width = width
+        self.height = height
 
         self.weights = []
         self.transforms = {}
+
+        if 'crop_resize' in cfg.tfs.keys():
+            cfg.tfs['crop_resize'].kwargs['size'] = [height, width]
+        
         for tf_name, tf_cfg in cfg.tfs.items():
             if tf_cfg.weight <= 0.0:
                 continue
@@ -262,6 +440,34 @@ class ImageTransforms(Transform):
                 n_subset=n_subset,
                 random_order=cfg.random_order,
             )
+
+    @classmethod
+    def create_piohfive_sequential_transform(cls, img_size: tuple[int, int]) -> v2.Compose:
+        """按照固定顺序创建图像增强转换。
+
+        Args:
+            img_size: 目标图像大小 (height, width)
+            p: 每个变换的概率
+
+        Returns:
+            按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
+        """
+        return v2.Compose([
+            v2.RandomResizedCrop(
+                size=img_size,
+                ratio=[1.0,1.0],
+                scale=[0.95,0.95],
+            ),
+            v2.RandomRotation(
+                degrees=(-5, 5),
+            ),
+            v2.ColorJitter(
+                brightness=(0.8, 1.2),
+                contrast=(0.8, 1.2),
+                saturation=(0.5, 1.5),
+                hue=(-0.05, 0.05),
+            )
+        ])
 
     def forward(self, *inputs: Any) -> Any:
         return self.tf(*inputs)

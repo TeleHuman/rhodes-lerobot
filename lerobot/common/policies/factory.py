@@ -138,6 +138,7 @@ def make_policy(
         features = dataset_to_policy_features(features)
         kwargs["dataset_stats"] = {k: v.stats for k, v in ds_meta.items()}
 
+    # 单数据集走这个
     elif ds_meta is not None:
         features = dataset_to_policy_features(ds_meta.features)
         kwargs["dataset_stats"] = ds_meta.stats
@@ -159,6 +160,15 @@ def make_policy(
     
     # 除了feature.type = FeatureType.ACTION的feature 都默认作为input
     cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
+
+    # filter depth
+    depth_keys = [k for k in cfg.input_features if 'depth' in k]
+    if depth_keys:
+        logging.info(f"Removing keys containing 'depth': {depth_keys}")
+        for k in depth_keys:
+            cfg.input_features.pop(k)
+            kwargs["dataset_stats"].pop(k)
+
     kwargs["config"] = cfg
 
     if cfg.pretrained_path:
@@ -175,7 +185,7 @@ def make_policy(
         # Make a fresh policy.
         policy = policy_cls(**kwargs)
 
-    policy.to(cfg.device)
+    # policy.to(cfg.device)
     assert isinstance(policy, nn.Module)
 
     # policy = torch.compile(policy, mode="reduce-overhead")
