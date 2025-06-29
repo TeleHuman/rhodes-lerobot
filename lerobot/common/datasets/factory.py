@@ -123,8 +123,8 @@ def make_dataset(cfg: TrainPipelineConfig) -> LeRobotDataset | MultiLeRobotDatas
         # image_transforms = ImageTransforms.create_piohfive_sequential_transform(
         #     (height, width)
         # ) if cfg.dataset.image_transforms.enable else None
-        image_transforms = ImageTransforms(cfg.dataset.image_transforms, height=height, width=width) if cfg.dataset.image_transforms.enable else None
-        wrist_transforms = ImageTransforms(cfg.dataset.wrist_transforms, height=None, width=None) if cfg.dataset.wrist_transforms.enable else None
+        image_transforms = ImageTransforms.create_jax_pi0_main_camera_transform(img_size=(height, width)) if cfg.dataset.image_transforms.enable else None
+        wrist_transforms = ImageTransforms.create_jax_pi0_wrist_camera_transform(img_size=(height, width)) if cfg.dataset.wrist_transforms.enable else None
 
         delta_timestamps = resolve_delta_timestamps(cfg.policy, ds_meta)
         dataset = LeRobotDataset(

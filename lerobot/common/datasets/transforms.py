@@ -69,7 +69,10 @@ class DeltaActionTransform(Transform):
         
         # 扩展state维度以匹配action
         # e.g., state: [batch_size, state_dim] -> [batch_size, 1, state_dim]
-        state_expanded = state.unsqueeze(-2)
+        if state.ndim - action.ndim == 1:
+            state_expanded = state.unsqueeze(-2)
+        else:
+            state_expanded = state
         
         # 只对掩码维度进行delta转换
         action[..., :dims] -= torch.where(
@@ -468,6 +471,98 @@ class ImageTransforms(Transform):
                 hue=(-0.05, 0.05),
             )
         ])
+    
+    @classmethod
+    def create_jax_pi0_main_camera_transform(cls, img_size: tuple[int, int]) -> v2.Compose:
+        """按照固定顺序创建图像增强转换。
+
+        Args:
+            img_size: 目标图像大小 (height, width)
+            p: 每个变换的概率
+
+        Returns:
+            按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
+        """
+        return v2.Compose([
+            v2.RandomResizedCrop(
+                size=img_size,
+                ratio=[1.0,1.0],
+                scale=[0.95,0.95],
+            ),
+            v2.RandomRotation(
+                degrees=(-5, 5),
+            ),
+            AugmaxStyleColorJitter(
+                brightness=0.3,
+                contrast=0.4,
+                saturation=0.5,
+            )
+        ])
+
+    @classmethod
+    def create_jax_pi0_wrist_camera_transform(cls, img_size: tuple[int, int]) -> v2.Compose:
+        """按照固定顺序创建图像增强转换。
+
+        Args:
+            img_size: 目标图像大小 (height, width)
+            p: 每个变换的概率
+
+        Returns:
+            按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
+        """
+        return v2.Compose([
+            AugmaxStyleColorJitter(
+                brightness=0.3,
+                contrast=0.4,
+                saturation=0.5,
+            )
+        ])
 
     def forward(self, *inputs: Any) -> Any:
         return self.tf(*inputs)
+
+
+class AugmaxStyleColorJitter(Transform):
+    """
+    仿 augmax/jax 逻辑的 ColorJitter，支持全局概率和固定顺序。
+    Args:
+        brightness (float): 亮度扰动范围 [-brightness, brightness]
+        contrast (float): 对比度扰动范围 [-contrast, contrast]
+        saturation (float): 饱和度扰动范围 [-saturation, saturation]
+        hue (float): 色调扰动范围 [-hue, hue]
+        p (float): 应用概率
+    """
+    def __init__(self, brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5):
+        super().__init__()
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
+        self.hue = hue
+        self.p = p
+
+    def forward(self, inpt):
+        if self.p < 1.0:
+            if torch.rand(1).item() > self.p:
+                return inpt
+
+        img = inpt
+
+        # 依次采样扰动量
+        if self.brightness > 0:
+            brightness_factor = 1.0 + torch.empty(1).uniform_(-self.brightness, self.brightness).item()
+            img = F.adjust_brightness(img, brightness_factor)
+        if self.contrast > 0:
+            contrast_factor = 1.0 + torch.empty(1).uniform_(-self.contrast, self.contrast).item()
+            img = F.adjust_contrast(img, contrast_factor)
+        if self.hue > 0:
+            hue_factor = torch.empty(1).uniform_(-self.hue, self.hue).item()
+            img = F.adjust_hue(img, hue_factor)
+        if self.saturation > 0:
+            saturation_factor = 1.0 + torch.empty(1).uniform_(-self.saturation, self.saturation).item()
+            img = F.adjust_saturation(img, saturation_factor)
+
+        return img
+
+    def extra_repr(self) -> str:
+        return (f"brightness={self.brightness}, contrast={self.contrast}, "
+                f"saturation={self.saturation}, hue={self.hue}, p={self.p}")

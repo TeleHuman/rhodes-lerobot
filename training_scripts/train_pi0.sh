@@ -12,12 +12,12 @@ DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 # Output directory
-OUTPUT_DIR="outputs/train_pi0/test_single_gpu_3"
+OUTPUT_DIR="outputs/train_pi0/test_single_gpu_4"
 
 # Training Parameters
 BATCH_SIZE=16
 TOTAL_STEPS=280000
-SAVE_FREQ=1000
+SAVE_FREQ=10000
 ACTION_CHUNK_SIZE=50
 NUM_WORKERS=16
 
@@ -30,5 +30,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \
     --policy.local_files_only=true \
     --output_dir=$OUTPUT_DIR \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ --num_workers=$NUM_WORKERS \
-    --policy.max_state_dim=64 --policy.max_action_dim=64 --policy.train_expert_from_scratch=False \
+    --policy.max_state_dim=32 --policy.max_action_dim=32 --policy.train_expert_from_scratch=False \
     --policy.chunk_size=$ACTION_CHUNK_SIZE --policy.n_action_steps=$ACTION_CHUNK_SIZE
