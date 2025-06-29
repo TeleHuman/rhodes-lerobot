@@ -44,6 +44,7 @@ from lerobot.common.datasets.utils import (
     check_delta_timestamps,
     check_timestamps_sync,
     check_version_compatibility,
+    compute_norm_stats_pro,
     compute_norm_stats,
     create_empty_dataset_info,
     create_lerobot_dataset_card,
@@ -657,6 +658,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             norm_stats = load_norm_stats(self.root, action_chunk_size)
         else:
             norm_stats = compute_norm_stats(self, keys = ['observation.state', 'action'])
+            # norm_stats = compute_norm_stats_pro(self, keys = ['observation.state', 'action'])
         
         self.meta.update_norm_stats(norm_stats)
 
@@ -1090,6 +1092,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         image_writer_processes: int = 0,
         image_writer_threads: int = 0,
         video_backend: str | None = None,
+        use_delta_action: bool = False,
     ) -> "LeRobotDataset":
         """Create a LeRobot Dataset from scratch in order to record data."""
         obj = cls.__new__(cls)
@@ -1121,6 +1124,11 @@ class LeRobotDataset(torch.utils.data.Dataset):
         obj.delta_indices = None
         obj.episode_data_index = None
         obj.video_backend = video_backend if video_backend is not None else get_safe_default_codec()
+
+        obj.use_delta_action = use_delta_action
+        if obj.use_delta_action:
+            obj.delta_action_transform = DeltaActionTransform(obj.action_mask)
+
         return obj
 
 

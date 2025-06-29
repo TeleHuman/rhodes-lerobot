@@ -858,3 +858,16 @@ def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_work
     output_path.write_text(serialize_json(norm_stats))
 
     return norm_stats
+
+# Calculate q01 and q99 and compute the filtered mean and std
+def compute_norm_stats_pro(dataset, keys = ['observation.state', 'action'], num_workers=16, batch_size=32):
+
+    from lerobot.common.datasets.compute_stats import compute_stats
+
+    norm_stats = compute_stats(dataset, batch_size=batch_size, num_workers=num_workers, keys_to_use=keys)
+
+    output_path = dataset.root / 'meta' / 'stats_pro.json'
+    serialized_stats = serialize_dict(norm_stats)
+    write_json(serialized_stats, output_path)
+
+    return norm_stats
