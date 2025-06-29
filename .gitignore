@@ -17,6 +17,10 @@ logs
 tmp
 wandb
 
+# haoming files
+lerobot/common/policies/pi0/modeling_pi0_haoming.py
+lerobot/common/policies/pi0/paligemma_with_expert_haoming.py
+
 # Data
 data
 outputs

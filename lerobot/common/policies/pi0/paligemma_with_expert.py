@@ -111,9 +111,9 @@ class PaliGemmaWithExpertConfig(PretrainedConfig):
                     "vision_use_head": False,
                 },
             )
-        elif isinstance(self.paligemma_config, dict):
+        elif isinstance(paligemma_config, dict):
             # Override Pi0 default config for PaliGemma
-            if "model_type" not in gemma_expert_config:
+            if "model_type" not in paligemma_config:
                 paligemma_config["model_type"] = "paligemma"
 
             cfg_cls = CONFIG_MAPPING[paligemma_config["model_type"]]
@@ -145,12 +145,12 @@ class PaliGemmaWithExpertConfig(PretrainedConfig):
                 use_cache=True,
                 vocab_size=257152,
             )
-        elif isinstance(self.gemma_expert_config, dict):
+        elif isinstance(gemma_expert_config, dict):
             # Override Pi0 default config for Gemma Expert
             if "model_type" not in gemma_expert_config:
                 gemma_expert_config["model_type"] = "gemma"
 
-            cfg_cls = CONFIG_MAPPING[paligemma_config["model_type"]]
+            cfg_cls = CONFIG_MAPPING[gemma_expert_config["model_type"]]
             self.gemma_expert_config = cfg_cls(**gemma_expert_config)
 
         super().__init__(**kwargs)
@@ -174,13 +174,13 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
     def __init__(self, config: PaliGemmaWithExpertConfig):
         super().__init__(config=config)
         self.config = config
-        self.paligemma = PaliGemmaForConditionalGeneration(config=config.paligemma_config)
-
-        ## TODO:以下两行需要认真学习下代码 by Yang Zhang
+        self.paligemma = PaliGemmaForConditionalGeneration(
+            config=config.paligemma_config
+        )
         self.gemma_expert = GemmaForCausalLM(config=config.gemma_expert_config)
         # Remove unused embed_tokens
         self.gemma_expert.model.embed_tokens = None
-
+        self.gemma_expert.lm_head = None
         self.to_bfloat16_like_physical_intelligence()
         self.set_requires_grad()
 
@@ -188,6 +188,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
     def initialize_gemma_expert(self):
         self.gemma_expert = GemmaForCausalLM(config=self.config.gemma_expert_config)
         self.gemma_expert.model.embed_tokens = None
+        self.gemma_expert.lm_head = None
 
         self.to_bfloat16_like_physical_intelligence()
         self.set_requires_grad()
@@ -226,10 +227,10 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
                 param.data = param.data.to(dtype=torch.bfloat16)
 
     def embed_image(self, image: torch.Tensor):
-        return self.paligemma.model.get_image_features(image)
-    
+        return self.paligemma.get_image_features(image)
+
     def embed_language_tokens(self, tokens: torch.Tensor):
-        return self.paligemma.model.get_input_embeddings()(tokens)
+        return self.paligemma.language_model.model.embed_tokens(tokens)
 
     # TODO: break down this huge forward into modules or functions
     def forward(
@@ -241,8 +242,7 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         use_cache: Optional[bool] = None,
         fill_kv_cache: Optional[bool] = None,
     ):
-        # models = [self.paligemma.language_model.model, self.gemma_expert.model]
-        models = [self.paligemma.language_model, self.gemma_expert.model]
+        models = [self.paligemma.language_model.model, self.gemma_expert.model]
 
         for hidden_states in inputs_embeds:
             # TODO this is very inefficient
@@ -374,10 +374,18 @@ class PaliGemmaWithExpertModel(PreTrainedModel):
         raise NotImplementedError("FA2 is not implemented (yet)")
 
     def eager_attention_forward(
-        self, attention_mask, batch_size, head_dim, query_states, key_states, value_states
+        self,
+        attention_mask,
+        batch_size,
+        head_dim,
+        query_states,
+        key_states,
+        value_states,
     ):
         num_att_heads = self.config.paligemma_config.text_config.num_attention_heads
-        num_key_value_heads = self.config.paligemma_config.text_config.num_key_value_heads
+        num_key_value_heads = (
+            self.config.paligemma_config.text_config.num_key_value_heads
+        )
         num_key_value_groups = num_att_heads // num_key_value_heads
 
         # query_states: batch_size, sequence_length, num_att_head, head_dim

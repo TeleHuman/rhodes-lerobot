@@ -74,7 +74,11 @@ from lerobot.common.utils.utils import get_safe_dtype
 
 
 def create_sinusoidal_pos_embedding(
-    time: torch.tensor, dimension: int, min_period: float, max_period: float, device="cpu"
+    time: torch.tensor,
+    dimension: int,
+    min_period: float,
+    max_period: float,
+    device="cpu",
 ) -> Tensor:
     """Computes sine-cosine positional embedding vectors for scalar positions."""
     if dimension % 2 != 0:
@@ -194,7 +198,9 @@ def aloha_gripper_to_angular(value):
 
     # This is the inverse of the angular to linear transformation inside the Interbotix code.
     def linear_to_radian(linear_position, arm_length, horn_radius):
-        value = (horn_radius**2 + linear_position**2 - arm_length**2) / (2 * horn_radius * linear_position)
+        value = (horn_radius**2 + linear_position**2 - arm_length**2) / (
+            2 * horn_radius * linear_position
+        )
         return safe_arcsin(value)
 
     # The constants are taken from the Interbotix code.
@@ -299,6 +305,7 @@ class PI0Policy(PreTrainedPolicy):
                 config.output_features, config.normalization_mapping, dataset_stats
             )
 
+        ## 这里haoming他们是 -> self.language_tokenizer = None
         self.language_tokenizer = AutoTokenizer.from_pretrained("google/paligemma-3b-pt-224")
         # self.language_tokenizer = AutoTokenizer.from_pretrained("/gemini/space/huggingface_cache/hub/models--google--paligemma-3b-pt-224/snapshots/35e4f46485b4d07967e7e9935bc3786aad50687c",
         #                                                         local_files_only=True, legacy=False)
@@ -314,7 +321,9 @@ class PI0Policy(PreTrainedPolicy):
         return self.parameters()
 
     @torch.no_grad
-    def select_action(self, batch: dict[str, Tensor], noise: Tensor | None = None) -> Tensor:
+    def select_action(
+        self, batch: dict[str, Tensor], noise: Tensor | None = None
+    ) -> Tensor:
         """Select a single action given environment observations.
 
         This method wraps `select_actions` in order to return one action at a time for execution in the
@@ -330,36 +339,33 @@ class PI0Policy(PreTrainedPolicy):
 
         # Action queue logic for n_action_steps > 1. When the action_queue is depleted, populate it by
         # querying the policy.
-        if len(self._action_queue) == 0:
-            images, img_masks = self.prepare_images(batch)
-            state = self.prepare_state(batch)
-            lang_tokens, lang_masks = self.prepare_language(batch)
+        images, img_masks = self.prepare_images(batch)
+        state = self.prepare_state(batch)
+        lang_tokens, lang_masks = self.prepare_language(batch)
 
-            actions = self.model.sample_actions(
-                images, img_masks, lang_tokens, lang_masks, state, noise=noise
-            )
+        actions = self.model.sample_actions(
+            images, img_masks, lang_tokens, lang_masks, state, noise=noise
+        )
 
-            # Unpad actions
-            original_action_dim = self.config.action_feature.shape[0]
-            actions = actions[:, :, :original_action_dim]
+        # Unpad actions
+        original_action_dim = self.config.action_feature.shape[0]
+        actions = actions[:, :, :original_action_dim]
 
-            actions = self.unnormalize_outputs({"action": actions})["action"]
+        actions = self.unnormalize_outputs({"action": actions})["action"]
 
-            if self.config.adapt_to_pi_aloha:
-                actions = self._pi_aloha_encode_actions(actions)
+        if self.config.adapt_to_pi_aloha:
+            actions = self._pi_aloha_encode_actions(actions)
+        return actions
 
-            # `self.model.forward` returns a (batch_size, n_action_steps, action_dim) tensor, but the queue
-            # effectively has shape (n_action_steps, batch_size, *), hence the transpose.
-            self._action_queue.extend(actions.transpose(0, 1))
-        return self._action_queue.popleft()
-
-    def forward(self, batch: dict[str, Tensor], noise=None, time=None) -> tuple[Tensor, dict[str, Tensor]]:
+    def forward(
+        self, batch: dict[str, Tensor], noise=None, time=None
+    ) -> tuple[Tensor, dict[str, Tensor]]:
         """Do a full training forward pass to compute the loss"""
         if self.config.adapt_to_pi_aloha:
             batch[OBS_ROBOT] = self._pi_aloha_decode_state(batch[OBS_ROBOT])
             batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
 
-        if "is_normalized" not in batch:
+        if self.normalize_inputs is not None and self.normalize_targets is not None:
             batch = self.normalize_inputs(batch)
             batch = self.normalize_targets(batch)
 
@@ -370,7 +376,9 @@ class PI0Policy(PreTrainedPolicy):
         actions_is_pad = batch.get("action_is_pad")
 
         loss_dict = {}
-        losses = self.model.forward(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+        losses = self.model.forward(
+            images, img_masks, lang_tokens, lang_masks, state, actions, noise, time
+        )
         loss_dict["losses_after_forward"] = losses.clone()
 
         if actions_is_pad is not None:
@@ -397,7 +405,9 @@ class PI0Policy(PreTrainedPolicy):
         img_masks = []
 
         present_img_keys = [key for key in self.config.image_features if key in batch]
-        missing_img_keys = [key for key in self.config.image_features if key not in batch]
+        missing_img_keys = [
+            key for key in self.config.image_features if key not in batch
+        ]
 
         if len(present_img_keys) == 0:
             raise ValueError(
@@ -413,7 +423,9 @@ class PI0Policy(PreTrainedPolicy):
             img = batch[key]
 
             if self.config.resize_imgs_with_padding is not None:
-                img = resize_with_pad(img, *self.config.resize_imgs_with_padding, pad_value=0)
+                img = resize_with_pad(
+                    img, *self.config.resize_imgs_with_padding, pad_value=0
+                )
 
             # Normalize from range [0,1] to [-1,1] as expected by siglip
             img = img * 2.0 - 1.0
@@ -450,9 +462,12 @@ class PI0Policy(PreTrainedPolicy):
             padding_side="right",
             max_length=self.config.tokenizer_max_length,
             return_tensors="pt",
+            truncation=True,
         )
         lang_tokens = tokenized_prompt["input_ids"].to(device=device)
-        lang_masks = tokenized_prompt["attention_mask"].to(device=device, dtype=torch.bool)
+        lang_masks = tokenized_prompt["attention_mask"].to(
+            device=device, dtype=torch.bool
+        )
 
         return lang_tokens, lang_masks
 
@@ -471,7 +486,9 @@ class PI0Policy(PreTrainedPolicy):
             actions[:, :, motor_idx] *= -1
         # Reverse the gripper transformation that is being applied by the Aloha runtime.
         for motor_idx in [6, 13]:
-            actions[:, :, motor_idx] = aloha_gripper_from_angular(actions[:, :, motor_idx])
+            actions[:, :, motor_idx] = aloha_gripper_from_angular(
+                actions[:, :, motor_idx]
+            )
         return actions
 
     def _pi_aloha_encode_actions_inv(self, actions):
@@ -480,7 +497,9 @@ class PI0Policy(PreTrainedPolicy):
             actions[:, :, motor_idx] *= -1
         # Reverse the gripper transformation that is being applied by the Aloha runtime.
         for motor_idx in [6, 13]:
-            actions[:, :, motor_idx] = aloha_gripper_from_angular_inv(actions[:, :, motor_idx])
+            actions[:, :, motor_idx] = aloha_gripper_from_angular_inv(
+                actions[:, :, motor_idx]
+            )
         return actions
 
     def prepare_state(self, batch):
@@ -577,6 +596,11 @@ class PI0Policy(PreTrainedPolicy):
             train_expert_from_scratch = train_expert_from_scratch.lower() == 'true'
 
         if train_expert_from_scratch:
+            logging.info(
+                "Training the expert Gemma model from scratch. "
+                "This will override the pretrained Gemma model weights."
+            )
+            # Initialize the Gemma expert model from scratch
             config.max_state_dim = int(max_state_dim)
             config.max_action_dim = int(max_action_dim)
 
