@@ -147,7 +147,11 @@ class PreTrainedPolicy(nn.Module, HubMixin, abc.ABC):
                 )
                 model.to(map_location)
         else:
-            safetensors.torch.load_model(model, model_file, strict=strict, device=map_location)
+            m, u = safetensors.torch.load_model(model, model_file, strict=strict, device=map_location)
+            if m:
+                print(f"Missing keys ({len(m)}): {m}")
+            if u:
+                raise RuntimeError(f"Unexpected keys in checkpoint ({len(u)}): {u}")
         return model
 
     # def generate_model_card(self, *args, **kwargs) -> ModelCard:
