@@ -1,14 +1,14 @@
 #!/bin/zsh
-
+# export ORION_ENABLE_LPC=1
 # Dataset configuration
-DATASET_REPO_ID="IPEC-COMMUNITY/bridge_orig_lerobot_oneview"
-DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
+DATASET_REPO_ID="rm75_3rgb/pick_coffee_normkey"
+DATASET_ROOT="/gemini/space/users/loy/WAIC/rm75_3rgb/pick_coffee_normkey"
 
 # Pretrained model configuration  
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 
 ### accelerate launch arguments
-GPUS=1
+GPUS=4
 MAIN_PROCESS_PORT=29500
 MIXED_PRECISION="bf16"
 GRADIENT_ACCUMULATION_STEPS=1
@@ -16,12 +16,13 @@ GRADIENT_CLIPPING=10.0
 
 ### Lerobot Training Parameters
 BATCH_SIZE=32
-TOTAL_STEPS=100
+TOTAL_STEPS=1600000
 SAVE_FREQ=5000
 LEARNING_RATE=0.00005
-ACTION_CHUNK_SIZE=4
-NUM_WORKERS=20
+ACTION_CHUNK_SIZE=20
+NUM_WORKERS=16
 SEED=42
+USE_TENSORBOARD=true
 
 # ------------------------------------------------------------
 ### generate output directory
@@ -39,7 +40,7 @@ LR="lr${LR_SCI}"
 CHUNK_SIZE="ck${ACTION_CHUNK_SIZE}"
 SEED_STR="seed${SEED}"
 
-OUTPUT_DIR="$MY_HOME/train_pi0/${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
+OUTPUT_DIR="/gemini/user/private/lerobot_logs/train_pi0/${DATASET_NAME}/${DATE1}_${TIME1}_${MODEL_NAME}_${GPU_NUM}_${CHUNK_SIZE}_${LR}_${BS}_${STEPS}_${SEED_STR}"
 echo "Output dir: $OUTPUT_DIR"
 # ------------------------------------------------------------
 
@@ -53,7 +54,6 @@ accelerate launch \
     --mixed_precision=$MIXED_PRECISION \
     --gradient_accumulation_steps=$GRADIENT_ACCUMULATION_STEPS \
     --gradient_clipping=$GRADIENT_CLIPPING \
-    --gradient_checkpointing=$GRADIENT_CHECKPOINTING \
     lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
     --dataset.root=$DATASET_ROOT \
@@ -62,7 +62,8 @@ accelerate launch \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=true \
     --policy_optimizer_lr=$LEARNING_RATE \
-    --output_dir=$OUTPUT_DIR \
+    --output_dir=$OUTPUT_DIR --use_tensorboard=$USE_TENSORBOARD \
+    --gradient_checkpointing=$GRADIENT_CHECKPOINTING \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ --num_workers=$NUM_WORKERS \
     --seed=$SEED \
     --policy.chunk_size=$ACTION_CHUNK_SIZE --policy.n_action_steps=$ACTION_CHUNK_SIZE
