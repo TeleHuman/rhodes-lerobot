@@ -182,8 +182,6 @@ def train(cfg: TrainPipelineConfig):
     else:
         wandb_logger = None
         logging.info(colored("Logs will be saved locally.", "yellow", attrs=["bold"]))
-        if not accelerator or accelerator.is_main_process:
-            tb_logger = SummaryWriter(log_dir=cfg.output_dir / "tensorboard")
 
     if cfg.seed is not None:
         set_seed(cfg.seed, accelerator=accelerator)
@@ -205,6 +203,7 @@ def train(cfg: TrainPipelineConfig):
     logging.info("Creating dataset" if not accelerator else "[rank%d] Creating dataset" % accelerator.process_index)
 
     # with accelerator.main_process_first():
+    # cfg.dataset.episodes = list(range(5))
     dataset = make_dataset(cfg)
 
     if cfg.policy.use_delta_action:
@@ -386,6 +385,10 @@ def train(cfg: TrainPipelineConfig):
         # increment `step` here.
         step += 1
         train_tracker.step()
+
+        if step == 1 and (not accelerator or accelerator.is_main_process):
+            tb_logger = SummaryWriter(log_dir=cfg.output_dir / "tensorboard")
+
         is_log_step = (
             cfg.log_freq > 0 and step % cfg.log_freq == 0
             and (not accelerator or accelerator.is_main_process)

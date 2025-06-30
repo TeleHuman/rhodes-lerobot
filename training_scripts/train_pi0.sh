@@ -5,8 +5,8 @@
 # DATASET_ROOT="/data/zhangyang/huggingface_cache/hub/datasets--lerobot--aloha_mobile_cabinet"
 
 # DATASET_REPO_ID="RoboMind/tienkung_gello_1rgb_normkey"
-DATASET_REPO_ID="RoboTwin/all_tasks_50ep"
-DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
+DATASET_REPO_ID="rm75_3rgb/pick_coffee_normkey"
+DATASET_ROOT="/gemini/space/users/loy/WAIC/rm75_3rgb/pick_coffee_normkey"
 
 # Pretrained model configuration  
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
@@ -18,7 +18,7 @@ OUTPUT_DIR="outputs/train_pi0/test_single_gpu_3"
 BATCH_SIZE=16
 TOTAL_STEPS=280000
 SAVE_FREQ=1000
-ACTION_CHUNK_SIZE=50
+ACTION_CHUNK_SIZE=20
 NUM_WORKERS=16
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \

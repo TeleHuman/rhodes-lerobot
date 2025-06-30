@@ -43,7 +43,7 @@ from lerobot.common.datasets.backward_compatibility import (
     BackwardCompatibilityError,
     ForwardCompatibilityError,
 )
-from lerobot.common.datasets.normalize import RunningStats, serialize_json
+from lerobot.common.datasets.normalize import RunningStats, serialize_json, my_serialize_json
 from lerobot.common.robot_devices.robots.utils import Robot
 from lerobot.common.utils.utils import is_valid_numpy_dtype_string
 from lerobot.configs.types import DictLike, FeatureType, PolicyFeature
@@ -853,8 +853,23 @@ def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_work
 
     norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
 
+    # output_path = dataset.root / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
+    # print(f"Writing stats to: {output_path}")
+    # output_path.write_text(serialize_json(norm_stats))
+
     output_path = dataset.root / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
     print(f"Writing stats to: {output_path}")
-    output_path.write_text(serialize_json(norm_stats))
+    output_path.write_text(my_serialize_json(norm_stats))
 
-    return norm_stats
+    norm_stats_dict = {
+        key: {
+            "mean": stat.mean,
+            "std": stat.std,
+            "q01": stat.q01,
+            "q99": stat.q99,
+        }
+        for key, stat in norm_stats.items()
+    }
+
+    #return norm_stats
+    return norm_stats_dict
