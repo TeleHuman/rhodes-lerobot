@@ -531,7 +531,12 @@ class LeRobotDataset(torch.utils.data.Dataset):
         check_timestamps_sync(timestamps, episode_indices, ep_data_index_np, self.fps, self.tolerance_s)
 
         # 获取action特征的名称列表
-        action_names = self.meta.features['action']['names']
+        names_data = self.meta.features['action']['names']
+        if isinstance(names_data, list):
+            action_names = names_data
+        elif isinstance(names_data, dict):
+            action_names = names_data.get('motors', [])
+
         # 创建action mask,初始化为1
         self.action_mask = torch.ones(len(action_names), dtype=torch.bool)
         # 遍历action names,将gripper相关的位置设为0 
@@ -651,10 +656,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
         norm_stats_path = self.root / 'meta' / f'delta_action_ck{action_chunk_size}_norm_stats.json'
 
-        if norm_stats_path.exists():
-            norm_stats = load_norm_stats(self.root, action_chunk_size)
-        else:
-            norm_stats = compute_norm_stats(self, keys = ['observation.state', 'action'])
+        if not norm_stats_path.exists():
+            compute_norm_stats(self, keys = ['observation.state', 'action'])
+
+        norm_stats = load_norm_stats(self.root, action_chunk_size)
         
         self.meta.update_norm_stats(norm_stats)
 
@@ -801,10 +806,6 @@ class LeRobotDataset(torch.utils.data.Dataset):
         # Add task as a string
         task_idx = item["task_index"].item()
         item["task"] = self.meta.tasks[task_idx]
-
-        # Add repo_id as a string
-        # TODO (chenyou fan): remove this key from the dataset batch
-        item["dataset"] = self.repo_id
 
         return item
 

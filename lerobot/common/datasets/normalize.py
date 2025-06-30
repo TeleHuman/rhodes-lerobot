@@ -122,9 +122,20 @@ class _NormStatsDict(pydantic.BaseModel):
     norm_stats: dict[str, NormStats]
 
 
+# def serialize_json(norm_stats: dict[str, NormStats]) -> str:
+#     """Serialize the running statistics to a JSON string."""
+#     return _NormStatsDict(norm_stats=norm_stats).model_dump_json(indent=2)
+
 def serialize_json(norm_stats: dict[str, NormStats]) -> str:
-    """Serialize the running statistics to a JSON string."""
-    return _NormStatsDict(norm_stats=norm_stats).model_dump_json(indent=2)
+    def to_dict(v: NormStats) -> dict:
+        return {
+            "mean": v.mean.tolist(),
+            "std": v.std.tolist(),
+            "q01": v.q01.tolist() if v.q01 is not None else None,
+            "q99": v.q99.tolist() if v.q99 is not None else None,
+        }
+
+    return json.dumps({k: to_dict(v) for k, v in norm_stats.items()}, indent=2)
 
 
 def deserialize_json(data: str) -> dict[str, NormStats]:

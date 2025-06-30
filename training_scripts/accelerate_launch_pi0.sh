@@ -22,6 +22,7 @@ LEARNING_RATE=0.00005
 ACTION_CHUNK_SIZE=4
 NUM_WORKERS=12
 SEED=42
+USE_TENSORBOARD=true
 
 # ------------------------------------------------------------
 ### generate output directory
@@ -59,7 +60,7 @@ accelerate launch \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=true \
     --policy_optimizer_lr=$LEARNING_RATE \
-    --output_dir=$OUTPUT_DIR \
+    --output_dir=$OUTPUT_DIR --use_tensorboard=$USE_TENSORBOARD \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ --num_workers=$NUM_WORKERS \
     --seed=$SEED \
     --policy.chunk_size=$ACTION_CHUNK_SIZE --policy.n_action_steps=$ACTION_CHUNK_SIZE

@@ -182,7 +182,7 @@ def train(cfg: TrainPipelineConfig):
     else:
         wandb_logger = None
         logging.info(colored("Logs will be saved locally.", "yellow", attrs=["bold"]))
-        if not accelerator or accelerator.is_main_process:
+        if cfg.use_tensorboard and (not accelerator or accelerator.is_main_process):
             tb_logger = SummaryWriter(log_dir=cfg.output_dir / "tensorboard")
 
     if cfg.seed is not None:

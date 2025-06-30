@@ -857,4 +857,4 @@ def compute_norm_stats(dataset, keys = ['observation.state', 'action'], num_work
     print(f"Writing stats to: {output_path}")
     output_path.write_text(serialize_json(norm_stats))
 
-    return norm_stats
+    # return norm_stats

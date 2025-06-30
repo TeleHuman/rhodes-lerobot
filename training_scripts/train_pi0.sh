@@ -20,6 +20,7 @@ TOTAL_STEPS=280000
 SAVE_FREQ=10000
 ACTION_CHUNK_SIZE=50
 NUM_WORKERS=16
+USE_TENSORBOARD=true
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
@@ -28,7 +29,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \
     --dataset.wrist_transforms.enable=true \
     --policy.path=$POLICY_PATH \
     --policy.local_files_only=true \
-    --output_dir=$OUTPUT_DIR \
+    --output_dir=$OUTPUT_DIR --use_tensorboard=$USE_TENSORBOARD \
     --batch_size=$BATCH_SIZE --steps=$TOTAL_STEPS --save_freq=$SAVE_FREQ --num_workers=$NUM_WORKERS \
     --policy.max_state_dim=32 --policy.max_action_dim=32 --policy.train_expert_from_scratch=False \
     --policy.chunk_size=$ACTION_CHUNK_SIZE --policy.n_action_steps=$ACTION_CHUNK_SIZE
