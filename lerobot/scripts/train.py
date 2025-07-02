@@ -142,6 +142,7 @@ def update_policy(
 
 @parser.wrap()
 def train(cfg: TrainPipelineConfig):
+    # breakpoint()
     cfg.validate()
     ### modified by Yang Zhang
     # Initialize the accelerator if distributed training is specified
@@ -408,12 +409,14 @@ def train(cfg: TrainPipelineConfig):
                 wandb_logger.log_dict(wandb_log_dict, step)
             else:
                 log_dict = train_tracker.to_dict()
-                log_dict.update(output_dict)
-                tb_logger.add_scalar('Loss/l2_loss', log_dict['loss'], log_dict['steps'])
-                tb_logger.add_scalar('Loss/losses_after_forward', log_dict['losses_after_forward'].mean().item(), log_dict['steps'])
-                tb_logger.add_scalar('Loss/losses_after_rm_padding', log_dict['losses_after_rm_padding'].mean().item(), log_dict['steps'])
-                tb_logger.add_scalar('Loss/losses_after_in_ep_bound', log_dict['losses_after_in_ep_bound'].mean().item(), log_dict['steps'])
-                tb_logger.add_scalar('Gradient/grad_norm', log_dict['grad_norm'], log_dict['steps'])
+                # breakpoint()
+                if output_dict:
+                    log_dict.update(output_dict)
+                    tb_logger.add_scalar('Loss/l2_loss', log_dict['loss'], log_dict['steps'])
+                    tb_logger.add_scalar('Loss/losses_after_forward', log_dict['losses_after_forward'].mean().item(), log_dict['steps'])
+                    tb_logger.add_scalar('Loss/losses_after_rm_padding', log_dict['losses_after_rm_padding'].mean().item(), log_dict['steps'])
+                    tb_logger.add_scalar('Loss/losses_after_in_ep_bound', log_dict['losses_after_in_ep_bound'].mean().item(), log_dict['steps'])
+                    tb_logger.add_scalar('Gradient/grad_norm', log_dict['grad_norm'], log_dict['steps'])
             train_tracker.reset_averages()
 
         if cfg.save_checkpoint and is_saving_step:

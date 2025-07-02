@@ -30,6 +30,8 @@ from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.policies.smolvla.configuration_smolvla import SmolVLAConfig
 from lerobot.common.policies.tdmpc.configuration_tdmpc import TDMPCConfig
 from lerobot.common.policies.vqbet.configuration_vqbet import VQBeTConfig
+from lerobot.common.policies.flowbc.configuration_flowbc import FlowbcConfig
+
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.configs.types import FeatureType
 
@@ -64,6 +66,10 @@ def get_policy_class(name: str) -> PreTrainedPolicy:
         from lerobot.common.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
         return SmolVLAPolicy
+    elif name == "flowbc":
+        from lerobot.common.policies.flowbc.modeling_flowbc import FlowbcPolicy
+
+        return FlowbcPolicy
     else:
         raise NotImplementedError(f"Policy with name {name} is not implemented.")
 
@@ -83,6 +89,8 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
         return PI0FASTConfig(**kwargs)
     elif policy_type == "smolvla":
         return SmolVLAConfig(**kwargs)
+    elif policy_type == "flowbc":
+        return FlowbcConfig(**kwargs)
     else:
         raise ValueError(f"Policy type '{policy_type}' is not available.")
 

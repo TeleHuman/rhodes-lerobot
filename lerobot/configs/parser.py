@@ -223,6 +223,7 @@ def wrap(config_path: Path | None = None):
                     cli_args = filter_arg("config_path", cli_args)
                     cfg = argtype.from_pretrained(config_path_cli, cli_args=cli_args)
                 else:
+                    # breakpoint()
                     cfg = draccus.parse(config_class=argtype, config_path=config_path, args=cli_args)
             response = fn(cfg, *args, **kwargs)
             return response
