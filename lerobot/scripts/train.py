@@ -179,11 +179,18 @@ def train(cfg: TrainPipelineConfig):
 
     if cfg.wandb.enable and cfg.wandb.project:
         wandb_logger = WandBLogger(cfg)
+        logging.info(colored("Logs will be saved online w/ WandB.", "green", attrs=["bold"]))
     else:
         wandb_logger = None
+    
+    if cfg.use_tensorboard and (not accelerator or accelerator.is_main_process):
+        tb_logger = SummaryWriter(log_dir=cfg.output_dir / "tensorboard")
+        logging.info(colored("Logs will be saved locally w/ tensorboard.", "blue", attrs=["bold"]))
+    else:
+        tb_logger = None
+
+    if tb_logger is None and wandb_logger is None:
         logging.info(colored("Logs will be saved locally.", "yellow", attrs=["bold"]))
-        if cfg.use_tensorboard and (not accelerator or accelerator.is_main_process):
-            tb_logger = SummaryWriter(log_dir=cfg.output_dir / "tensorboard")
 
     if cfg.seed is not None:
         set_seed(cfg.seed, accelerator=accelerator)
@@ -406,7 +413,7 @@ def train(cfg: TrainPipelineConfig):
                 if output_dict:
                     wandb_log_dict.update(output_dict)
                 wandb_logger.log_dict(wandb_log_dict, step)
-            else:
+            elif tb_logger:
                 log_dict = train_tracker.to_dict()
                 log_dict.update(output_dict)
                 tb_logger.add_scalar('Loss/l2_loss', log_dict['loss'], log_dict['steps'])
@@ -414,6 +421,7 @@ def train(cfg: TrainPipelineConfig):
                 tb_logger.add_scalar('Loss/losses_after_rm_padding', log_dict['losses_after_rm_padding'].mean().item(), log_dict['steps'])
                 tb_logger.add_scalar('Loss/losses_after_in_ep_bound', log_dict['losses_after_in_ep_bound'].mean().item(), log_dict['steps'])
                 tb_logger.add_scalar('Gradient/grad_norm', log_dict['grad_norm'], log_dict['steps'])
+                
             train_tracker.reset_averages()
 
         if cfg.save_checkpoint and is_saving_step:
