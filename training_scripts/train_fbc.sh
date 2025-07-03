@@ -15,12 +15,13 @@ MY_HOME="/gemini/space/users/ysy/data/"
 OUTPUT_DIR="$MY_HOME/train_flowbc/rt"
 
 # Training Parameters
-BATCH_SIZE=32
+BATCH_SIZE=128
 TOTAL_STEPS=100000
 SAVE_FREQ=5000
 # EVAL_FREQ=1000
 # EVAL_BATCH_SIZE=10
-NUM_WORKERS=12
+SAVE_FREQ=100
+NUM_WORKERS=8
 
 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
