@@ -798,6 +798,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
         if self.image_transforms is not None:
             image_keys = self.meta.camera_keys
             for cam in image_keys:
+                if 'depth' in cam:
+                    continue
+
                 if 'wrist' in cam or 'image_1' in cam or 'image_2' in cam:
                     item[cam] = self.wrist_transforms(item[cam])
                 else:

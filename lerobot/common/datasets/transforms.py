@@ -19,8 +19,9 @@ from typing import Any, Callable, Sequence
 
 import torch
 from torchvision.transforms import v2
-from torchvision.transforms.v2 import Transform
+from torchvision.transforms.v2 import Transform, ColorJitter
 from torchvision.transforms.v2 import functional as F  # noqa: N812
+from torchvision.transforms import functional as T
 
 
 ### newly added
@@ -306,6 +307,20 @@ class ImageTransformsConfig:
     random_order: bool = False
     tfs: dict[str, ImageTransformConfig] = field(
         default_factory=lambda: {
+            "crop_resize": ImageTransformConfig(
+                weight=1.0,
+                type="RandomResizedCrop",
+                kwargs={
+                    "size": [224,224],
+                    "ratio": [1.0,1.0],
+                    "scale": [0.95,0.95], # delin used [0.9, 0.95]
+                },
+            ),
+            "rotate": ImageTransformConfig(
+                weight=1.0,
+                type="RandomRotate",
+                kwargs={"degrees": [-5, 5]},
+            ),
             "brightness": ImageTransformConfig(
                 weight=1.0,
                 type="ColorJitter",
@@ -330,20 +345,6 @@ class ImageTransformsConfig:
                 weight=1.0,
                 type="SharpnessJitter",
                 kwargs={"sharpness": (0.5, 1.5)},
-            ),
-            "rotate": ImageTransformConfig(
-                weight=1.0,
-                type="RandomRotate",
-                kwargs={"degrees": [-5, 5]},
-            ),
-            "crop_resize": ImageTransformConfig(
-                weight=1.0,
-                type="RandomResizedCrop",
-                kwargs={
-                    "size": [224,224],
-                    "ratio": [1.0,1.0],
-                    "scale": [0.95,0.95], # delin used [0.9, 0.95]
-                },
             ),
         }
     )
@@ -406,7 +407,10 @@ def make_transform_from_config(cfg: ImageTransformConfig):
     elif cfg.type == "RandomRotate":
         return v2.RandomRotation(**cfg.kwargs)
     elif cfg.type == "RandomResizedCrop":
-        return v2.RandomResizedCrop(**cfg.kwargs)
+        scale = cfg.kwargs['scale']
+        size = cfg.kwargs['size']
+        crop_size = [int(size[0]*scale[0]), int(size[1]*scale[1])]
+        return LerobotRandomResizedCrop(crop_size=crop_size, resize_size=size)
     else:
         raise ValueError(f"Transform '{cfg.type}' is not valid.")
 
@@ -456,19 +460,21 @@ class ImageTransforms(Transform):
             按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
         """
         return v2.Compose([
-            v2.RandomResizedCrop(
+            v2.RandomCrop(
+                size=(int(img_size[0] * 0.95), int(img_size[1] * 0.95)),
+            ),
+            v2.Resize(
                 size=img_size,
-                ratio=[1.0,1.0],
-                scale=[0.95,0.95],
             ),
             v2.RandomRotation(
                 degrees=(-5, 5),
             ),
-            v2.ColorJitter(
+            LerobotColorJitter(
                 brightness=(0.8, 1.2),
                 contrast=(0.8, 1.2),
                 saturation=(0.5, 1.5),
                 hue=(-0.05, 0.05),
+                p=0.5,
             )
         ])
     
@@ -484,18 +490,21 @@ class ImageTransforms(Transform):
             按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
         """
         return v2.Compose([
-            v2.RandomResizedCrop(
+            v2.RandomCrop(
+                size=(int(img_size[0] * 0.95), int(img_size[1] * 0.95)),
+            ),
+            v2.Resize(
                 size=img_size,
-                ratio=[1.0,1.0],
-                scale=[0.95,0.95],
             ),
             v2.RandomRotation(
                 degrees=(-5, 5),
             ),
-            AugmaxStyleColorJitter(
+            LerobotColorJitter(
                 brightness=0.3,
                 contrast=0.4,
                 saturation=0.5,
+                hue=0.1,
+                p=0.5,
             )
         ])
 
@@ -511,10 +520,12 @@ class ImageTransforms(Transform):
             按照 RandomCrop -> Resize -> Rotate -> ColorJitter 顺序的图像增强转换
         """
         return v2.Compose([
-            AugmaxStyleColorJitter(
+            LerobotColorJitter(
                 brightness=0.3,
                 contrast=0.4,
                 saturation=0.5,
+                hue=0.1,
+                p=0.5,
             )
         ])
 
@@ -566,3 +577,20 @@ class AugmaxStyleColorJitter(Transform):
     def extra_repr(self) -> str:
         return (f"brightness={self.brightness}, contrast={self.contrast}, "
                 f"saturation={self.saturation}, hue={self.hue}, p={self.p}")
+
+class LerobotColorJitter(ColorJitter):
+    def __init__(self, brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1, p=0.5):
+        super().__init__(brightness=brightness, contrast=contrast, saturation=saturation, hue=hue)
+        self.p = p
+    
+    def forward(self, inpt):
+        if self.p < 1.0:
+            if torch.rand(1).item() > self.p:
+                return inpt
+        return super().forward(inpt)
+
+def LerobotRandomResizedCrop(crop_size, resize_size):
+    return v2.Compose([
+        v2.RandomCrop(size=crop_size),
+        v2.Resize(size=resize_size),
+    ])

@@ -5,8 +5,8 @@
 # DATASET_ROOT="/data/zhangyang/huggingface_cache/hub/datasets--lerobot--aloha_mobile_cabinet"
 
 # DATASET_REPO_ID="RoboMind/tienkung_gello_1rgb_normkey"
-DATASET_REPO_ID="RoboTwin/all_tasks_50ep"
-DATASET_ROOT="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
+DATASET_REPO_ID="rm75_3rgb/make_sanwinch"
+DATASET_ROOT="/gemini/space/shared_dataset/Realman/WAIC/lerobot_result/waic_80/$DATASET_REPO_ID"
 
 # Pretrained model configuration  
 POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
@@ -15,12 +15,12 @@ POLICY_PATH="$HF_HUB_CACHE/models--lerobot--pi0"
 OUTPUT_DIR="outputs/train_pi0/test_single_gpu_4"
 
 # Training Parameters
-BATCH_SIZE=16
+BATCH_SIZE=12
 TOTAL_STEPS=280000
 SAVE_FREQ=10000
-ACTION_CHUNK_SIZE=50
-NUM_WORKERS=16
-USE_TENSORBOARD=true
+ACTION_CHUNK_SIZE=20
+NUM_WORKERS=0
+USE_TENSORBOARD=false
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 python lerobot/scripts/train.py \
     --dataset.repo_id=$DATASET_REPO_ID \
